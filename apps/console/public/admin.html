@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="robots" content="noindex,nofollow">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaddiya · admin</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="page-body">
+  <header class="page-head">
+    <a class="logo-row" href="/"><span class="mark" aria-hidden="true"></span><span class="wordmark">kaddiya</span></a>
+    <nav class="page-nav">
+      <a href="/">Console</a>
+      <span class="page-kicker" id="org-kicker">Admin</span>
+      <span class="theme-toggle" data-theme-toggle role="group" aria-label="Theme"><button type="button" data-theme-choice="light" aria-pressed="true">Light</button><button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button></span>
+    </nav>
+  </header>
+
+  <main class="page-col wide">
+    <div id="banner" class="page-ok" hidden></div>
+    <div id="error" class="page-error" hidden></div>
+
+    <div class="admin-title-row">
+      <h1 class="page-title" id="org-name">…</h1>
+      <span id="plan-pill" class="pill"></span>
+    </div>
+    <p class="page-lede" id="admin-lede">Connect your models, choose who can join, and control how Kaddiya works on your instances.</p>
+
+    <section id="setup-summary" class="callout" hidden>
+      <p class="mono-label">1 · Workspace ✓ &nbsp; / &nbsp; 2 · ServiceNow ✓ &nbsp; / &nbsp; 3 · Models</p>
+      <p id="setup-status" role="status"></p>
+      <div id="setup-ready" hidden>
+        <p>Choose a model beside the message box. You can switch before each message, including in the same conversation. Start with: “Show my open incidents.”</p>
+        <a class="btn-primary as-link" href="/">Open workspace</a>
+        <a class="btn-ghost as-link" href="/admin">Workspace settings</a>
+      </div>
+    </section>
+    <section class="step" id="sec-model">
+      <div class="step-head"><h2>Your models</h2><span class="step-note" id="model-note"></span></div>
+      <p class="step-desc" id="model-intro">Bring your API keys and model choices. Add as many connections as your team needs, then choose a default. Your provider bills usage directly.</p>
+      <div id="model-connections" class="model-connections"></div>
+      <div class="form-row model-default-row"><label for="model-default">Default for new work</label><select id="model-default" class="text-input"></select></div>
+      <details class="disclosure" id="model-editor">
+        <summary>Add a model connection</summary>
+        <p class="step-desc">Use a clear name, like Fast triage, Change builder, or Second opinion. Everyone in your organization can choose a connection in the composer.</p>
+        <form id="model-form" class="form-col">
+          <label class="mono-label" for="m-label">Connection name</label>
+          <input id="m-label" class="text-input" placeholder="Fast triage" maxlength="80" required>
+          <label class="mono-label" for="m-provider">Provider</label>
+          <select id="m-provider" class="text-input"><option value="anthropic">Anthropic</option><option value="openai">OpenAI or compatible endpoint</option><option value="gateway">Anthropic-compatible gateway</option></select>
+          <label class="mono-label" for="m-base-url" id="m-base-url-label">Endpoint URL</label>
+          <input id="m-base-url" class="text-input mono" type="url" spellcheck="false">
+          <label class="mono-label" for="m-model">Model ID</label>
+          <input id="m-model" class="text-input mono" maxlength="160" spellcheck="false" required>
+          <label class="mono-label" for="m-key">API key <span class="opt" id="m-key-hint"></span></label>
+          <input id="m-key" class="text-input mono" type="password" autocomplete="new-password" required>
+          <label class="mono-label" for="m-effort">Reasoning effort <span class="opt">optional</span></label>
+          <select id="m-effort" class="text-input"><option value="">Provider default</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select>
+          <p class="form-hint">We test streaming and tool use before saving. Keys are encrypted and never displayed. Model quality varies; try a read-only question before trusting a new model with changes.</p>
+          <div class="form-row"><button class="btn-primary" type="submit" id="model-save">Test and add model</button><button class="btn-ghost" id="model-cancel" type="button">Cancel</button><span class="form-row-note" id="model-result" role="status"></span></div>
+        </form>
+      </details>
+    </section>
+
+    <div id="stats" class="admin-grid"></div>
+
+    <!-- instances -->
+    <section class="step" id="sec-instances">
+      <div class="step-head"><h2>Instances</h2><span class="step-note" id="instances-note"></span></div>
+      <p class="step-desc">Each instance is one application registry record on ServiceNow, verified by an admin sign-in and bound by its <span class="mono">instance_id</span>. Sub-production instances carry production data after a clone, so every instance gets the same treatment.</p>
+      <div class="table-wrap"><table class="table" id="instances-table"></table></div>
+      <details class="disclosure">
+        <summary>Register another instance</summary>
+        <div class="callout">
+          <div class="mono-label">Redirect URL for the registry record</div>
+          <div id="callback-url" class="callout-value mono"></div>
+        </div>
+        <form id="instance-form" class="form-col">
+          <label class="mono-label" for="i-label">Label</label>
+          <input id="i-label" class="text-input" placeholder="dev · test · prod" maxlength="40">
+          <label class="mono-label" for="i-host">Instance host</label>
+          <input id="i-host" class="text-input mono" placeholder="acmedev.service-now.com" spellcheck="false" required>
+          <label class="mono-label" for="i-client-id">Client ID</label>
+          <input id="i-client-id" class="text-input mono" spellcheck="false" autocomplete="off" required>
+          <label class="mono-label" for="i-client-secret">Client secret</label>
+          <input id="i-client-secret" class="text-input mono" type="password" autocomplete="off" required>
+          <div class="form-row"><button class="btn-primary" type="submit">Save and verify as an admin</button></div>
+        </form>
+      </details>
+    </section>
+
+    <!-- members -->
+    <section class="step" id="sec-members">
+      <div class="step-head"><h2>Members</h2><span class="step-note" id="members-note"></span></div>
+      <p class="step-desc">Anyone who can sign in to a verified instance can ask to join. Being able to authenticate is not being entitled: the join policy below decides, and this queue is where it lands.</p>
+      <div class="table-wrap"><table class="table" id="members-table"></table></div>
+    </section>
+
+    <!-- access -->
+    <section class="step" id="sec-access">
+      <div class="step-head"><h2>Access</h2></div>
+      <form id="access-form" class="form-col">
+        <label class="mono-label" for="a-name">Org name</label>
+        <input id="a-name" class="text-input" maxlength="80" required>
+
+        <div class="mono-label">Join policy</div>
+        <div class="radio-group">
+          <label class="check-row"><input type="radio" name="join_policy" value="approve"> New members wait in the queue until an admin approves them</label>
+          <label class="check-row"><input type="radio" name="join_policy" value="auto"> Anyone who can sign in joins immediately</label>
+        </div>
+        <label class="check-row"><input type="checkbox" id="a-deny-external" checked> Never admit external accounts (<span class="mono">snc_external</span>: customers, suppliers, portal contacts)</label>
+        <label class="mono-label" for="a-required-role">Required role <span class="opt">optional</span></label>
+        <input id="a-required-role" class="text-input mono" placeholder="itil" spellcheck="false">
+
+        <div class="mono-label">Writes members may propose</div>
+        <div class="radio-group" id="tiers"></div>
+        <label class="check-row" id="a-runs-plan-row"><input type="checkbox" id="a-runs-plan"> Runs may commit an approved plan <span class="opt">legacy plan-approved tasks · non-production only</span></label>
+        <label class="check-row"><input type="checkbox" id="a-autonomous"> Allow members to choose autonomous mode</label>
+        <div class="section-note">Autonomous mode can apply all enabled actions without individual approvals, including production changes and executable configuration. Members must acknowledge this for each task. Every write uses their current ServiceNow permissions and is audited. Start on a test instance; Stop prevents subsequent actions but does not undo writes already sent.</div>
+
+        <label class="mono-label" for="a-session">Session ceiling</label>
+        <select id="a-session" class="text-input">
+          <option value="">8 hours (the maximum)</option>
+          <option value="14400000">4 hours</option>
+          <option value="7200000">2 hours</option>
+          <option value="3600000">1 hour</option>
+        </select>
+        <div class="section-note">An absolute cap from sign-in, never extended by activity. Downward only.</div>
+        <div class="form-row"><button class="btn-primary" type="submit">Save access settings</button><span class="form-row-note" id="access-saved"></span></div>
+      </form>
+    </section>
+
+    <!-- usage -->
+    <section class="step" id="sec-billing">
+      <div class="step-head"><h2>Usage</h2><span class="step-note">what this org has used</span></div>
+      <div id="billing-body"></div>
+    </section>
+
+    <!-- audit -->
+    <section class="step" id="sec-audit">
+      <div class="step-head"><h2>Audit</h2><span class="step-note">25 per page · append-only</span></div>
+      <div class="table-wrap"><table class="table" id="audit-table"></table></div><div class="actions"><button class="btn" id="audit-prev" type="button">Newer</button><span id="audit-page" aria-live="polite"></span><button class="btn" id="audit-next" type="button">Older</button></div>
+    </section>
+  </main>
+  <div class="non-affiliation">Kaddiya is not affiliated with or endorsed by ServiceNow.</div>
+  <script src="/admin.js"></script>
+</body>
+</html>

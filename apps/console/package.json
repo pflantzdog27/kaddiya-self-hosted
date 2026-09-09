@@ -1,0 +1,22 @@
+{
+  "name": "aiec-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AIEC Console — a standalone web UI where users manage their ServiceNow instance through a user-scoped AI agent",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
+    "db:migrate": "node -e \"import('./server/env.js').then(()=>import('./server/db.js')).then(async m=>{console.log('applied', await m.migrate()); await m.close();})\"",
+    "check": "for f in server/*.js public/*.js; do node --check $f || exit 1; done"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "pg": "^8.23.0"
+  }
+}

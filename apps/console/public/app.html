@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="robots" content="noindex,nofollow">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaddiya</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="workspace">
+    <nav id="sidebar" class="rail-left">
+      <div class="logo-row">
+        <span class="mark" aria-hidden="true"></span>
+        <span class="wordmark">kaddiya</span>
+      </div>
+      <div class="new-chat-wrap">
+        <button id="new-chat" class="new-chat" type="button">
+          <span>New chat</span><kbd>⌘N</kbd>
+        </button>
+
+      </div>
+      <div id="conv-list" class="conv-list"></div>
+      <div class="rail-tools">
+        <a id="admin-link" class="admin-link" href="/admin" hidden>Admin</a>
+        <span class="theme-toggle" data-theme-toggle role="group" aria-label="Theme"><button type="button" data-theme-choice="light" aria-pressed="true">Light</button><button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button></span>
+      </div>
+      <button id="who" class="who" type="button" title="View your profile">
+        <span id="who-avatar" class="avatar"></span>
+        <span id="who-name">…</span>
+      </button>
+    </nav>
+
+    <div class="centre">
+      <header class="thread-head">
+        <div id="conv-title" class="thread-title">New chat</div>
+        <div class="head-right">
+          <span id="spend" class="spend" title="Estimated spend this session" hidden></span>
+          <span id="model-badge" class="model-badge">…</span>
+        </div>
+      </header>
+
+      <main id="chat" class="chat">
+        <div class="welcome" id="welcome">
+          <h2>What do you want to work on?</h2>
+          <div class="suggestions">
+            <button class="chip" type="button">What's on my docket today — start with the highest priority case assigned to me or my group.</button>
+            <button class="chip" type="button">How many open incidents are there, by priority?</button>
+            <button class="chip" type="button">Show me the schema of the incident table</button>
+            <button class="chip" type="button">What does an update set actually capture? Check the docs for our release.</button>
+          </div>
+        </div>
+      </main>
+
+      <footer class="composer">
+        <div class="work-controls">
+          <label id="model-select-label" for="model-select" hidden>Model</label>
+          <select id="model-select" class="model-select" aria-label="Model for the next turn" hidden></select>
+          <label for="work-mode">Work style</label>
+          <select id="work-mode" class="model-select"><option value="review">Review each change</option><option value="guided">Guided task</option><option value="autonomous">Autonomous</option></select>
+          <label for="work-template" id="work-template-label" hidden>Task</label>
+          <select id="work-template" class="model-select" hidden><option value="build">Build a change</option><option value="investigate">Investigate a case</option><option value="audit">Audit access or data</option></select>
+        </div>
+        <div id="autonomy-warning" class="autonomy-warning" hidden>
+          <p id="autonomy-context"></p>
+          <p>Kaddiya can apply changes without asking again, including configuration code and messages to people. Provider charges can accumulate. It checks the plan and verifies its work, but it can make mistakes. Keep this tab open. Stop prevents later actions; it cannot undo a write already sent.</p>
+          <label><input id="autonomy-ack" type="checkbox" form="form"> I authorize this task to use the enabled actions as me.</label>
+        </div>
+        <div id="attachments" class="attachments" hidden></div>
+        <form id="form">
+          <button id="attach" type="button" class="attach" title="Attach a text file: a log, an export, a script" aria-label="Attach a file">＋</button>
+          <input id="file-input" type="file" multiple hidden accept=".txt,.md,.csv,.json,.xml,.js,.ts,.log,.yaml,.yml,.html,.sql,.py,.sh,.properties,.tsv">
+          <textarea id="input" rows="1" placeholder="Ask about this record, the queue, or the instance…" autocomplete="off"></textarea>
+          <span id="next-hint" class="next-hint" title="Press Tab to put the suggested next step in the box" hidden><kbd>Tab</kbd></span>
+          <button id="send" type="submit" aria-label="Send">↵</button>
+        </form>
+        <div class="composer-hint">Your ServiceNow permissions, every time. Review each change, or authorize a task to work autonomously.</div>
+      </footer>
+    </div>
+
+    <aside id="panel" class="rail-right" hidden>
+      <div class="panel-head">
+        <div class="panel-head-main">
+          <div id="panel-number" class="panel-number"></div>
+          <div id="panel-title" class="panel-title"></div>
+        </div>
+        <button id="panel-close" class="panel-close" type="button" aria-label="Close panel">✕</button>
+      </div>
+      <div id="panel-body" class="panel-body"></div>
+    </aside>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

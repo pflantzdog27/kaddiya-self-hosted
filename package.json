@@ -1,0 +1,14 @@
+{
+  "name": "kaddiya",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "docker compose up -d --wait",
+    "stop": "docker compose stop",
+    "logs": "docker compose logs -f console",
+    "check": "npm --prefix apps/console run check",
+    "test": "npm --prefix apps/console test"
+  }
+}

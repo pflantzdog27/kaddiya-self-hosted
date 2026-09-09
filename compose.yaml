@@ -1,0 +1,41 @@
+name: kaddiya
+services:
+  database:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: kaddiya
+      POSTGRES_DB: kaddiya
+      POSTGRES_PASSWORD: ${KADDIYA_DB_PASSWORD:?Run npm run setup first}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaddiya -d kaddiya"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  console:
+    build: ./apps/console
+    environment:
+      DATABASE_URL: postgres://kaddiya:${KADDIYA_DB_PASSWORD}@database:5432/kaddiya
+      KADDIYA_EDITION: self-hosted
+      KADDIYA_MASTER_KEY: ${KADDIYA_MASTER_KEY:?Run npm run setup first}
+      KADDIYA_SETUP_TOKEN: ${KADDIYA_SETUP_TOKEN:?Run npm run setup first}
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      PORT: 3000
+    ports:
+      - "127.0.0.1:${KADDIYA_PORT:-3000}:3000"
+    volumes:
+      - console-data:/data
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/config').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+volumes:
+  postgres:
+  console-data:

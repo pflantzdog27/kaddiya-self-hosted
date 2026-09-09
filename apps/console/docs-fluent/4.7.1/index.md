@@ -1,0 +1,193 @@
+# ServiceNow Fluent SDK 4.7.1 — topics
+
+Captured from `now-sdk explain` on 2026-09-02.
+
+- [acl-api](acl-api.md) — Acl, acl, access control, security, permission, sys_security_acl
+- [action-api](action-api.md) — Action, action, flow-action, wfa.action, action.core, built-in-action
+- [aiagent-api](aiagent-api.md) — AiAgent, ai agent, artificial intelligence, sn_aia_agent
+- [aiagenticworkflow-api](aiagenticworkflow-api.md) — AiAgenticWorkflow, ai agentic workflow, artificial intelligence, ai agent
+- [applicability-api](applicability-api.md) — Applicability, applicability, workspace, ux, sys_ux_applicability
+- [application-menu-guide](application-menu-guide.md) — application menu, navigation, navigator, sidebar, module, sys_app_application
+- [applicationmenu-api](applicationmenu-api.md) — ApplicationMenu, application menu, navigation, module, sys_app_application
+- [approvalrulescolumn-api](approvalrulescolumn-api.md) — ApprovalRulesColumn, column, table, approval rules
+- [assignment-rule-guide](assignment-rule-guide.md) — assignment rule, assignment-rule, task assignment, auto-assign, routing, assignment_group
+- [atf-guide](atf-guide.md) — test, testing, atf, automated-test-framework, form, rest
+- [attachmentvariable-api](attachmentvariable-api.md) — AttachmentVariable, variable, service catalog, attachment
+- [basicdatetimecolumn-api](basicdatetimecolumn-api.md) — BasicDateTimeColumn, column, table, basic datetime
+- [basicimagecolumn-api](basicimagecolumn-api.md) — BasicImageColumn, column, table, basic image, image
+- [booleancolumn-api](booleancolumn-api.md) — BooleanColumn, column, table, boolean, true false, checkbox
+- [breakvariable-api](breakvariable-api.md) — BreakVariable, variable, service catalog, break, separator
+- [building-ai-agents-guide](building-ai-agents-guide.md) — ai-agent, agentic-workflow, agent-studio, sn_aia_agent, sn_aia_usecase, ai-automation
+- [business-rule-guide](business-rule-guide.md) — business rule, server script, record trigger, sys_script, data validation, cascading updates
+- [businessrule-api](businessrule-api.md) — BusinessRule, business rule, server script, sys_script, automation, trigger
+- [calendardatetimecolumn-api](calendardatetimecolumn-api.md) — CalendarDateTimeColumn, column, table, calendar datetime
+- [catalogclientscript-api](catalogclientscript-api.md) — CatalogClientScript, catalog client script, service catalog, catalog_script_client
+- [catalogitem-api](catalogitem-api.md) — CatalogItem, catalog item, service catalog, request, sc_cat_item
+- [catalogitemrecordproducer-api](catalogitemrecordproducer-api.md) — CatalogItemRecordProducer, record producer, service catalog, sc_cat_item_producer
+- [cataloguipolicy-api](cataloguipolicy-api.md) — CatalogUiPolicy, catalog ui policy, service catalog, catalog_ui_policy
+- [checkboxvariable-api](checkboxvariable-api.md) — CheckboxVariable, variable, service catalog, checkbox, boolean
+- [choicecolumn-api](choicecolumn-api.md) — ChoiceColumn, column, table, choice, dropdown, select
+- [ci-integration](ci-integration.md) — ci, cd, integration, install, build, deploy
+- [client-script-guide](client-script-guide.md) — client script, browser script, form behavior, field validation, dynamic forms, onLoad
+- [clientscript-api](clientscript-api.md) — ClientScript, client script, browser script, sys_script_client, onLoad, onChange
+- [columntypecheck-api](columntypecheck-api.md) — ColumnTypeCheck, instance scan, column type check, health scan
+- [conditionscolumn-api](conditionscolumn-api.md) — ConditionsColumn, column, table, conditions, filter, encoded query
+- [containerendvariable-api](containerendvariable-api.md) — ContainerEndVariable, variable, service catalog, container, layout
+- [containersplitvariable-api](containersplitvariable-api.md) — ContainerSplitVariable, variable, service catalog, container, layout
+- [containerstartvariable-api](containerstartvariable-api.md) — ContainerStartVariable, variable, service catalog, container, layout
+- [creating-workspaces-guide](creating-workspaces-guide.md) — workspace, dashboard, list-menu, ux, crud, navigation
+- [cross-scope-privilege-guide](cross-scope-privilege-guide.md) — cross-scope privilege, scope access, sys_scope_privilege, cross-application, runtime access, script access
+- [crossscopeprivilege-api](crossscopeprivilege-api.md) — CrossScopePrivilege, cross scope privilege, scope, access, sys_scope_privilege, permission
+- [custom-action-api](custom-action-api.md) — Action, custom action, action definition, actionStep, wfa.actionStep, reusable action
+- [customvariable-api](customvariable-api.md) — CustomVariable, variable, service catalog, custom
+- [customwithlabelvariable-api](customwithlabelvariable-api.md) — CustomWithLabelVariable, variable, service catalog, custom, label
+- [dashboard-api](dashboard-api.md) — Dashboard, dashboard, workspace, par_dashboard, widget, tab
+- [data-helpers-guide](data-helpers-guide.md) — data-helpers, data helpers, Duration, Time, TemplateValue, FieldList
+- [data-policy-guide](data-policy-guide.md) — data policy, field enforcement, mandatory, read-only, server-side validation, import sets
+- [datapolicy-api](datapolicy-api.md) — DataPolicy, data policy, server side data policy, sys_data_policy2, sys_data_policy_rule, mandatory
+- [datecolumn-api](datecolumn-api.md) — DateColumn, column, table, date
+- [datetimecolumn-api](datetimecolumn-api.md) — DateTimeColumn, column, table, datetime, timestamp, calendar
+- [datetimevariable-api](datetimevariable-api.md) — DateTimeVariable, variable, service catalog, date, datetime
+- [datevariable-api](datevariable-api.md) — DateVariable, variable, service catalog, date
+- [dayofweekcolumn-api](dayofweekcolumn-api.md) — DayOfWeekColumn, column, table, day of week
+- [daysofweekcolumn-api](daysofweekcolumn-api.md) — DaysOfWeekColumn, column, table, days of week
+- [decimalcolumn-api](decimalcolumn-api.md) — DecimalColumn, column, table, decimal, number
+- [developing-apps-guide](developing-apps-guide.md) — now-sdk, project-setup, cli, scaffold, build, deploy
+- [documentidcolumn-api](documentidcolumn-api.md) — DocumentIdColumn, column, table, document id
+- [domainidcolumn-api](domainidcolumn-api.md) — DomainIdColumn, column, table, domain
+- [domainpathcolumn-api](domainpathcolumn-api.md) — DomainPathColumn, column, table, domain path
+- [duedatecolumn-api](duedatecolumn-api.md) — DueDateColumn, column, table, due date
+- [durationcolumn-api](durationcolumn-api.md) — DurationColumn, column, table, duration, time
+- [durationvariable-api](durationvariable-api.md) — DurationVariable, variable, service catalog, duration
+- [email-notification-guide](email-notification-guide.md) — email, notification, alert, digest, template, calendar
+- [emailcolumn-api](emailcolumn-api.md) — EmailColumn, column, table, email
+- [emailnotification-api](emailnotification-api.md) — EmailNotification, email notification, email, alert, sysevent_email_action, notification
+- [emailvariable-api](emailvariable-api.md) — EmailVariable, variable, service catalog, email
+- [external-services-guide](external-services-guide.md) — ldap, external-services, directory, active-directory, openldap, failover
+- [faq](faq.md) — fluent, development, general
+- [fieldlistcolumn-api](fieldlistcolumn-api.md) — FieldListColumn, column, table, field list
+- [fieldnamecolumn-api](fieldnamecolumn-api.md) — FieldNameColumn, column, table, field name
+- [floatcolumn-api](floatcolumn-api.md) — FloatColumn, column, table, float, number
+- [flow-api](flow-api.md) — Flow, flow, Flow(), wfa, workflow-automation, flow-designer
+- [flow-stages-api](flow-stages-api.md) — FlowStage, flow stage, stage, wfa.stage, sys_hub_flow_stage, flow tracker
+- [fluent-overview](fluent-overview.md) — fluent, dsl, overview, getting started, typescript, metadata
+- [form-api](form-api.md) — Form, form, form layout, sys_ui_form, ui section, sys_ui_section
+- [genericcolumn-api](genericcolumn-api.md) — GenericColumn, column, table, generic
+- [guidcolumn-api](guidcolumn-api.md) — GuidColumn, column, table, guid, sys_id
+- [htmlcolumn-api](htmlcolumn-api.md) — HtmlColumn, column, table, html, rich text
+- [htmlvariable-api](htmlvariable-api.md) — HtmlVariable, variable, service catalog, html, rich text
+- [importing-data-guide](importing-data-guide.md) — importing data, data source, import set, transform map, staging table, CSV
+- [importset-api](importset-api.md) — ImportSet, import set, transform map, data import, sys_transform_map
+- [inboundemailaction-api](inboundemailaction-api.md) — InboundEmailAction, inbound email, email action, sys_email_action, email processing, email automation
+- [instance-scan-guide](instance-scan-guide.md) — instance-scan, scan-check, health-check, compliance, upgradability, security-scan
+- [integercolumn-api](integercolumn-api.md) — IntegerColumn, column, table, integer, number
+- [integerdatecolumn-api](integerdatecolumn-api.md) — IntegerDateColumn, column, table, integer date
+- [ipaddressvariable-api](ipaddressvariable-api.md) — IpAddressVariable, variable, service catalog, ip address
+- [jsoncolumn-api](jsoncolumn-api.md) — JsonColumn, column, table, json
+- [keys-file](keys-file.md) — keys-file, keys, keys.ts, Now.ID, sys_id, record identity
+- [labelvariable-api](labelvariable-api.md) — LabelVariable, variable, service catalog, label, display
+- [lintercheck-api](lintercheck-api.md) — LinterCheck, instance scan, linter check, health scan
+- [list-api](list-api.md) — List, list, list layout, sys_ui_list, columns, view
+- [listcollectorvariable-api](listcollectorvariable-api.md) — ListCollectorVariable, variable, service catalog, list collector, multi-select
+- [listcolumn-api](listcolumn-api.md) — ListColumn, column, table, list
+- [lookupmultiplechoicevariable-api](lookupmultiplechoicevariable-api.md) — LookupMultipleChoiceVariable, variable, service catalog, lookup, multiple choice
+- [lookupselectboxvariable-api](lookupselectboxvariable-api.md) — LookupSelectBoxVariable, variable, service catalog, lookup, select
+- [maskedvariable-api](maskedvariable-api.md) — MaskedVariable, variable, service catalog, masked, password
+- [module-guide](module-guide.md) — module, server module, import, export, glide API, third-party library
+- [multilinetextcolumn-api](multilinetextcolumn-api.md) — MultiLineTextColumn, column, table, multi-line text, textarea
+- [multilinetextvariable-api](multilinetextvariable-api.md) — MultiLineTextVariable, variable, service catalog, multi-line text, textarea
+- [multiplechoicevariable-api](multiplechoicevariable-api.md) — MultipleChoiceVariable, variable, service catalog, multiple choice, radio
+- [namevaluepairscolumn-api](namevaluepairscolumn-api.md) — NameValuePairsColumn, column, table, name value pairs
+- [now-attach-guide](now-attach-guide.md) — now-attach, Now.attach, attach, attachment, image, sys_attachment
+- [now-config-reference](now-config-reference.md) — NowConfig, now.config.json, config, configuration, scope, project settings
+- [now-include-guide](now-include-guide.md) — now-include, Now.include, include, script file, external script, file include
+- [now-ref-guide](now-ref-guide.md) — now-ref, Now.ref, ref, reference, foreign key, sys_id
+- [nowassist-skills-guide](nowassist-skills-guide.md) — now-assist, skill-kit, NowAssistSkillConfig, ai-skills, custom-skills, llm
+- [nowassistskillconfig-api](nowassistskillconfig-api.md) — NowAssistSkillConfig, now assist, skill, ai, generative ai
+- [numericscalevariable-api](numericscalevariable-api.md) — NumericScaleVariable, variable, service catalog, numeric scale, rating
+- [otherdatecolumn-api](otherdatecolumn-api.md) — OtherDateColumn, column, table, other date
+- [override-guide](override-guide.md) — $override, override, custom fields, unknown properties, x_ properties, u_ properties
+- [overridecolumn-api](overridecolumn-api.md) — OverrideColumn, dictionary override, column override, table, sys_dictionary_override
+- [password2column-api](password2column-api.md) — Password2Column, column, table, password, encrypted
+- [platform-view-guide](platform-view-guide.md) — platform-view, ui-action, ui-policy, ui-formatter, buttons, actions
+- [platform-view-lists-guide](platform-view-lists-guide.md) — view, view rule, list, list control, relationship, related list
+- [property-api](property-api.md) — Property, property, system property, configuration, sys_properties, settings
+- [property-guide](property-guide.md) — property, system property, sys_properties, configuration, feature flag, application setting
+- [radiocolumn-api](radiocolumn-api.md) — RadioColumn, column, table, radio, choice
+- [record-api](record-api.md) — Record, record, generic record, metadata, data, fallback
+- [recordscolumn-api](recordscolumn-api.md) — RecordsColumn, column, table
+- [referencecolumn-api](referencecolumn-api.md) — ReferenceColumn, column, table, reference, foreign key, lookup
+- [referencevariable-api](referencevariable-api.md) — ReferenceVariable, variable, service catalog, reference, lookup
+- [registering-events-guide](registering-events-guide.md) — events, event-registry, sysevent, gs-eventQueue, custom-queue, event-driven
+- [requestedforvariable-api](requestedforvariable-api.md) — RequestedForVariable, variable, service catalog, requested for, user
+- [restapi-api](restapi-api.md) — RestApi, rest api, api, endpoint, web service, scripted rest
+- [richtextlabelvariable-api](richtextlabelvariable-api.md) — RichTextLabelVariable, variable, service catalog, rich text, label, html
+- [role-api](role-api.md) — Role, role, user role, sys_user_role, permission, access
+- [scheduled-script-guide](scheduled-script-guide.md) — scheduled-script, scheduled-job, cron, periodic, background-job, maintenance
+- [scheduledatetimecolumn-api](scheduledatetimecolumn-api.md) — ScheduleDateTimeColumn, column, table, schedule datetime
+- [scheduledscript-api](scheduledscript-api.md) — ScheduledScript, scheduled script, scheduled job, cron, sysauto_script, timer
+- [script-include-guide](script-include-guide.md) — script include, sys_script_include, server-side, reusable logic, GlideAjax, client callable
+- [scriptaction-api](scriptaction-api.md) — ScriptAction, script action, event, sysevent_script_action
+- [scriptcolumn-api](scriptcolumn-api.md) — ScriptColumn, column, table, script
+- [scripted-rest-api-guide](scripted-rest-api-guide.md) — REST API, scripted REST, web service, endpoint, HTTP method, sys_ws_definition
+- [scriptinclude-api](scriptinclude-api.md) — ScriptInclude, script include, server script, library, sys_script_include
+- [scriptonlycheck-api](scriptonlycheck-api.md) — ScriptOnlyCheck, instance scan, script only check, health scan
+- [security-guide](security-guide.md) — security, acl, access, access-control, role, permissions
+- [selectboxvariable-api](selectboxvariable-api.md) — SelectBoxVariable, variable, service catalog, select box, dropdown
+- [service-catalog-guide](service-catalog-guide.md) — service catalog, catalog item, record producer, sc_cat_item, sc_cat_item_producer, self-service
+- [service-catalog-variables-guide](service-catalog-variables-guide.md) — catalog variable, variable set, catalog ui policy, catalog client script, item_option_new, item_option_new_set
+- [service-portal-guide](service-portal-guide.md) — service portal, portal, widget, theme, page, sp_portal
+- [service-portal-reference-guide](service-portal-reference-guide.md) — service portal menu, angular provider, widget dependency, header footer, portal css, scss
+- [serviceportal-api](serviceportal-api.md) — ServicePortal, service portal, portal, sp_portal
+- [singlelinetextvariable-api](singlelinetextvariable-api.md) — SingleLineTextVariable, variable, service catalog, single line text, text input
+- [sla-api](sla-api.md) — Sla, sla, service level agreement, contract_sla, duration, schedule
+- [slushbucketcolumn-api](slushbucketcolumn-api.md) — SlushBucketColumn, column, table, slush bucket, multi-select
+- [spangularprovider-api](spangularprovider-api.md) — SPAngularProvider, service portal, angular provider, sp_angular_provider
+- [spheaderfooter-api](spheaderfooter-api.md) — SPHeaderFooter, service portal, header, footer, sp_header_footer
+- [spmenu-api](spmenu-api.md) — SPMenu, service portal, menu, navigation, sp_instance_menu
+- [sppage-api](sppage-api.md) — SPPage, service portal, page, sp_page
+- [sppageroutemap-api](sppageroutemap-api.md) — SPPageRouteMap, service portal, page route map, redirect, sp_page_route_map
+- [sptheme-api](sptheme-api.md) — SPTheme, service portal, theme, sp_theme, css, styling
+- [spwidget-api](spwidget-api.md) — SPWidget, service portal, widget, sp_widget
+- [spwidgetdependency-api](spwidgetdependency-api.md) — SPWidgetDependency, service portal, widget dependency, sp_dependency
+- [stringcolumn-api](stringcolumn-api.md) — StringColumn, column, table, string, text, varchar
+- [subflow-api](subflow-api.md) — subflow, flow, automation, reusable, wfa.subflow, assignSubflowOutputs
+- [systemclassnamecolumn-api](systemclassnamecolumn-api.md) — SystemClassNameColumn, column, table, sys_class_name
+- [table-api](table-api.md) — Table, table, database, schema, sys_db_object, data
+- [table-augments-guide](table-augments-guide.md) — augments, sys_db_object, sys_dictionary, table, cross-scope
+- [table-guide](table-guide.md) — table, column, field, schema, relationship, related-list
+- [tablecheck-api](tablecheck-api.md) — TableCheck, instance scan, table check, health scan
+- [tablenamecolumn-api](tablenamecolumn-api.md) — TableNameColumn, column, table, table name
+- [templatevaluecolumn-api](templatevaluecolumn-api.md) — TemplateValueColumn, column, table, template value
+- [test-api](test-api.md) — Test, test, atf, automated test framework, sys_atf_test, testing
+- [timecolumn-api](timecolumn-api.md) — TimeColumn, column, table, time
+- [translatedfieldcolumn-api](translatedfieldcolumn-api.md) — TranslatedFieldColumn, column, table, translated field, i18n
+- [translatedtextcolumn-api](translatedtextcolumn-api.md) — TranslatedTextColumn, column, table, translated text, i18n
+- [trigger-api](trigger-api.md) — trigger, flow-trigger, wfa.trigger, sys_hub_trigger_definition, record-trigger, scheduled-trigger
+- [ui-page-guide](ui-page-guide.md) — ui page, custom page, react, web page, form interface, dashboard
+- [ui-page-patterns-guide](ui-page-patterns-guide.md) — ui page patterns, dirty state, field extraction, service layer, css styling, build system
+- [ui-page-theming-guide](ui-page-theming-guide.md) — ui page theming, horizon, design system, css variables, layout, controls
+- [uiaction-api](uiaction-api.md) — UiAction, ui action, button, form button, server script, list action
+- [uipage-api](uipage-api.md) — UiPage, ui page, jelly, html, endpoint, processing script
+- [uipagevariable-api](uipagevariable-api.md) — UIPageVariable, variable, service catalog, ui page, macro
+- [uipolicy-api](uipolicy-api.md) — UiPolicy, ui policy, form policy, sys_ui_policy
+- [urlcolumn-api](urlcolumn-api.md) — UrlColumn, column, table, url, link
+- [urlvariable-api](urlvariable-api.md) — UrlVariable, variable, service catalog, url, link
+- [userimagecolumn-api](userimagecolumn-api.md) — UserImageColumn, column, table, user image, avatar
+- [userpreference-api](userpreference-api.md) — UserPreference, user preference, setting, sys_user_preference, config, toggle
+- [userrolescolumn-api](userrolescolumn-api.md) — UserRolesColumn, column, table, user roles
+- [uxlistmenuconfig-api](uxlistmenuconfig-api.md) — UxListMenuConfig, ux list menu, workspace, list config, navigation, list view
+- [variableset-api](variableset-api.md) — VariableSet, variable set, service catalog, item_option_new_set
+- [versioncolumn-api](versioncolumn-api.md) — VersionColumn, column, table, version
+- [wfa-api](wfa-api.md) — wfa, workflow, workflow automation, flow, automation, action
+- [wfa-custom-action-guide](wfa-custom-action-guide.md) — wfa, workflow-automation, custom action, Action, actionStep, wfa.actionStep
+- [wfa-flow-actions-guide](wfa-flow-actions-guide.md) — wfa, workflow-automation, flow-action, OOB-action, built-in-action, action.core
+- [wfa-flow-guide](wfa-flow-guide.md) — flow, wfa, workflow-automation, flow-designer, trigger, data-pill
+- [wfa-flow-logic-api](wfa-flow-logic-api.md) — flow-logic, wfa, workflow-automation, flow-designer, conditional, loop
+- [wfa-flow-logic-guide](wfa-flow-logic-guide.md) — flow-logic, wfa, workflow-automation, flow-designer, conditional, loop
+- [wfa-flow-stages-guide](wfa-flow-stages-guide.md) — FlowStage, flow stage, stage, wfa.stage, sys_hub_flow_stage, flow tracker
+- [wfa-subflow-guide](wfa-subflow-guide.md) — wfa, workflow-automation, subflow, wfa.subflow, assignSubflowOutputs, reusable subflow
+- [wfa-trigger-guide](wfa-trigger-guide.md) — trigger, wfa, workflow-automation, flow-designer, record-trigger, scheduled-trigger
+- [widesinglelinetextvariable-api](widesinglelinetextvariable-api.md) — WideSingleLineTextVariable, variable, service catalog, wide text, text input
+- [workspace-api](workspace-api.md) — Workspace, workspace, ux, sys_ux_page_registry
+- [yesnovariable-api](yesnovariable-api.md) — YesNoVariable, variable, service catalog, yes no, boolean

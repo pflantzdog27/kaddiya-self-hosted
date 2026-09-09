@@ -1,0 +1,26 @@
+# Build context for apps/console/Dockerfile. Keep the image to what the
+# server reads at runtime: server/, public/, docs-fluent/, scripts/, package*.
+
+# Installed fresh in the image with `npm ci --omit=dev`.
+node_modules
+
+# Secrets never ride in an image; Railway injects variables at runtime.
+.env
+.env.*
+!.env.example
+
+# Runtime state lives on the /data volume (see Dockerfile), never in the image.
+data
+docs-cache
+logs
+*.log
+
+# Tests run in CI, not in the container.
+test
+
+# Local noise.
+.DS_Store
+README.md
+Dockerfile
+.dockerignore
+railway.json

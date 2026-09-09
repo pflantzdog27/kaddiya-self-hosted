@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="robots" content="noindex,nofollow">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaddiya · waiting for approval</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-body">
+  <main class="login-col">
+    <span class="mark lg" aria-hidden="true"></span>
+    <div class="login-wordmark">kaddiya</div>
+    <div id="title" class="login-sub">Checking your membership…</div>
+    <div class="login-fields">
+      <div id="status-card" class="pending-card" hidden>
+        <div class="mono-label" id="status-label">status</div>
+        <div id="status-text" class="pending-text"></div>
+        <div id="status-who" class="pending-who"></div>
+      </div>
+      <button id="recheck" class="login-btn" type="button">Check again</button>
+      <button id="signout" class="btn-ghost centred" type="button">Sign out</button>
+    </div>
+    <div class="login-foot">You signed in on your instance; an org admin decides who joins the console.<br>Nothing was read from your instance beyond your own user record and roles.</div>
+  </main>
+  <div class="non-affiliation">Kaddiya is not affiliated with or endorsed by ServiceNow.</div>
+  <script src="/pending.js"></script>
+</body>
+</html>

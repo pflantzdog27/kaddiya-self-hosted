@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="robots" content="noindex,nofollow">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaddiya · workspace setup</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="page-body">
+  <header class="page-head">
+    <a class="logo-row" href="/"><span class="mark" aria-hidden="true"></span><span class="wordmark">kaddiya</span></a>
+    <span class="page-kicker">Workspace setup</span>
+  </header>
+
+  <main class="page-col">
+    <h1 class="page-title">Your workspace. Your models.</h1>
+    <p class="page-lede">Kaddiya is the harness for your ServiceNow work. Connect your instance, bring your API keys, and choose the models your team can use.</p>
+
+    <p class="section-note" id="setup-progress" aria-live="polite">1 · Workspace &nbsp; / &nbsp; 2 · ServiceNow &nbsp; / &nbsp; 3 · Models</p>
+    <div id="error" class="page-error" role="alert" hidden></div>
+
+    <!-- 1 · name the org -->
+    <section id="step-org" class="step">
+      <div class="step-head"><span class="step-num">01</span><h2>Name your workspace</h2></div>
+      <p class="step-desc">Use your company or team name. You can change it later.</p>
+      <form id="org-form" class="form-col">
+        <div id="setup-code-row" hidden>
+          <label class="mono-label" for="setup-code">Setup code</label>
+          <input id="setup-code" class="text-input mono" type="password" autocomplete="off">
+          <p class="form-hint">Paste the code printed in your terminal by npm run setup. It connects this browser to your installation.</p>
+        </div>
+        <label class="mono-label" for="org-name">Workspace name</label>
+        <input id="org-name" class="text-input" maxlength="80" placeholder="Acme Corp" required autocomplete="organization">
+        <div class="form-row"><button class="btn-primary" type="submit">Continue</button></div>
+      </form>
+    </section>
+
+    <!-- 2 · the registry record + the instance -->
+    <section id="step-instance" class="step" hidden>
+      <div class="step-head"><span class="step-num">02</span><h2>Connect ServiceNow</h2></div>
+      <p class="step-desc">Create one OAuth record on your instance. No application or plugin installation is needed for this connection. Use a developer or test instance to get started.</p>
+      <ol class="setup-instructions">
+        <li>Open <strong>Machine Identity Console → Inbound integrations → New integration → OAuth - Authorization code grant</strong>. In classic navigation: <strong>System OAuth → Application Registry → New → Create an OAuth API endpoint for external clients</strong>.</li>
+        <li>Set the name and provider name to <strong>Kaddiya</strong>. Paste the redirect URL below. Leave <strong>Public client unchecked</strong> and <strong>Active checked</strong>, then save.</li>
+        <li>Copy the generated client ID and secret into this form.</li>
+      </ol>
+      <div class="callout">
+        <div class="mono-label">Redirect URL · paste this into the record</div>
+        <div id="callback-url" class="callout-value mono"></div>
+        <button id="copy-callback" class="btn-ghost" type="button">Copy redirect URL</button>
+        <span id="copy-status" role="status"></span>
+      </div>
+      <form id="instance-form" class="form-col">
+        <label class="mono-label" for="host">Instance host</label>
+        <input id="host" class="text-input mono" placeholder="acme.service-now.com" spellcheck="false" required>
+        <label class="mono-label" for="client-id">Client ID</label>
+        <input id="client-id" class="text-input mono" placeholder="b23fe2b0d7ee42089283dd46bfd20444" spellcheck="false" autocomplete="off" required>
+        <label class="mono-label" for="client-secret">Client secret</label>
+        <input id="client-secret" class="text-input mono" type="password" autocomplete="off" required>
+        <div class="form-hint">The secret is encrypted in your deployment’s database and is never returned to the browser.</div>
+        <div class="form-row">
+          <button class="btn-primary" type="submit">Save and verify as an admin</button>
+          <span class="form-row-note">You will be sent to your instance's own login page.</span>
+        </div>
+      </form>
+    </section>
+
+    <!-- 3 · what verification does -->
+    <section id="step-verify" class="step muted-step" hidden>
+      <div class="step-head"><h2>What happens when you sign in</h2></div>
+      <p class="step-desc">Sign in on ServiceNow as an administrator. Kaddiya checks the OAuth record and redirect URL, then makes you the workspace owner. Next, you’ll add and test your model connections. Other members need your approval before joining.</p>
+      <div id="retry-row" class="form-row" hidden>
+        <a id="retry-verify" class="btn-primary as-link" href="#">Verify again</a>
+        <button id="change-details" class="btn-ghost" type="button">Change the details</button>
+      </div>
+    </section>
+
+    <p class="page-foot">Already a member of an org? <a href="/signin">Sign in</a>.</p>
+  </main>
+  <div class="non-affiliation">Kaddiya is not affiliated with or endorsed by ServiceNow.</div>
+  <script src="/start.js"></script>
+</body>
+</html>

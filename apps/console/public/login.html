@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="robots" content="noindex,nofollow">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaddiya</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-body">
+  <main class="login-col">
+    <span class="mark lg" aria-hidden="true"></span>
+    <div class="login-wordmark">kaddiya</div>
+    <div class="login-sub">You authenticate on your own instance.<br>Kaddiya only ever sees what you can.</div>
+    <div id="notice" class="login-notice" hidden></div>
+    <div id="self-hosted" class="login-fields" hidden>
+      <div id="instance-field" class="instance-field" hidden>
+        <span id="instance-host"></span><span class="ok">✓</span>
+      </div>
+      <a class="login-btn" href="/auth/login">Sign in with ServiceNow</a>
+    </div>
+    <form id="instance-form" class="login-fields" method="get" action="/auth/login" hidden>
+      <label class="mono-label" for="instance">Your instance</label>
+      <input id="instance" name="instance" class="text-input mono" placeholder="dev123456.service-now.com" autocomplete="url" spellcheck="false" required>
+      <button class="login-btn" type="submit">Sign in with ServiceNow</button>
+      <a id="start-link" class="login-alt" href="/start">New here? Set up your org</a>
+    </form>
+    <div class="login-foot">OAuth 2.0 · your credentials never touch Kaddiya<br>reads and writes run as you · you choose the approval mode</div>
+  </main>
+  <div class="non-affiliation">Kaddiya is not affiliated with or endorsed by ServiceNow.</div>
+  <script src="/login.js"></script>
+</body>
+</html>

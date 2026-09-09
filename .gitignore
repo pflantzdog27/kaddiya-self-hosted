@@ -1,0 +1,20 @@
+node_modules/
+dist/
+target/
+vendor/servicenow-docs/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+# never commit instance credentials
+now-sdk-auth*.json
+
+# Published design canvases: ~2.4 MB each, the Claude Design editor plus fonts
+# with the design/**/*.dc.html sources embedded verbatim inside them. Verified
+# identical to the sources beside them, and regenerated whole on every publish.
+# Keep the sources; see design/README.md.
+design/**/kaddiya-*.html
+
+# Agent worktrees (git worktrees, ~180 MB, recreated on demand)
+.claude/worktrees/

@@ -1,0 +1,80 @@
+# Release-blocking gates for apps/console.
+#
+# Working agreement (docs/architecture/enterprise-build-handoff.md): a CI gate
+# lands in the same phase as the mechanism it guards. Phase 0 brings the CSP and
+# the escape-first render invariant; the enterprise phases add the Postgres
+# stores with RLS (ADR 0008 D6/D7), so the DB-backed tests run here against a
+# throwaway Postgres service container. Railway's "Wait for CI" setting makes
+# this workflow the deploy gate for kaddiya.com (docs/deploy/kaddiya-com.md).
+
+name: console
+
+on:
+  push:
+    paths:
+      - 'apps/console/**'
+      - 'compose.yaml'
+      - 'package.json'
+      - 'scripts/**'
+      - 'README.md'
+      - '.github/workflows/console-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/console/**'
+      - 'compose.yaml'
+      - 'package.json'
+      - 'scripts/**'
+      - 'README.md'
+      - '.github/workflows/console-ci.yml'
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/console
+
+    # test/helpers/db.js refuses any database whose name does not end in
+    # `_test` (it truncates every table between tests) and reads the
+    # connection string from TEST_DATABASE_URL. The migration creates the
+    # NOLOGIN role `kaddiya_app`, which needs CREATEROLE — POSTGRES_USER on
+    # the official image is a superuser, so that is covered.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kaddiya
+          POSTGRES_PASSWORD: kaddiya
+          POSTGRES_DB: kaddiya_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kaddiya -d kaddiya_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://kaddiya:kaddiya@localhost:5432/kaddiya_test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      # Parses every server and browser file. The frontend is plain browser
+      # JS with no build step, so this is the whole of its compile check.
+      - name: Syntax
+        run: npm run check
+
+      # Escape-first rendering (no links/images/remote loads from model or
+      # instance content), notebook keep/discard governance, the
+      # no-inline-script/style invariant the strict CSP depends on, and the
+      # tenancy / sessions / keys / billing suites against the service
+      # container above.
+      - name: Invariants
+        run: npm test
