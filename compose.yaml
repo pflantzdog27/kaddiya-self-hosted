@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_USER: kaddiya
       POSTGRES_DB: kaddiya
-      POSTGRES_PASSWORD: ${KADDIYA_DB_PASSWORD:?Run npm run setup first}
+      POSTGRES_PASSWORD: ${KADDIYA_DB_PASSWORD:?Run npm run setup:docker first}
     volumes:
       - postgres:/var/lib/postgresql/data
     healthcheck:
@@ -19,8 +19,8 @@ services:
     environment:
       DATABASE_URL: postgres://kaddiya:${KADDIYA_DB_PASSWORD}@database:5432/kaddiya
       KADDIYA_EDITION: self-hosted
-      KADDIYA_MASTER_KEY: ${KADDIYA_MASTER_KEY:?Run npm run setup first}
-      KADDIYA_SETUP_TOKEN: ${KADDIYA_SETUP_TOKEN:?Run npm run setup first}
+      KADDIYA_MASTER_KEY: ${KADDIYA_MASTER_KEY:?Run npm run setup:docker first}
+      KADDIYA_SETUP_TOKEN: ${KADDIYA_SETUP_TOKEN:?Run npm run setup:docker first}
       BASE_URL: ${BASE_URL:-http://localhost:3000}
       PORT: 3000
     ports:

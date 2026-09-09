@@ -2,6 +2,13 @@
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 let existingInstance = null;
+// The local launcher passes its operator code without putting it in HTTP
+// requests, access logs or referrers. Remove it from browser history at once.
+const launchCode = new URLSearchParams(location.hash.slice(1)).get('setup');
+if (launchCode) {
+  history.replaceState(null, '', location.pathname + location.search);
+  $('setup-code').value = launchCode;
+}
 
 function showError(message) {
   $('error').textContent = message || '';

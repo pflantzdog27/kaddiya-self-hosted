@@ -1,5 +1,6 @@
-// One Postgres, org_id on every tenant row, row-level security as the first
-// wall (ADR 0008 D6/D7). This module is the only place a connection is made.
+// Local workspaces use embedded PGlite; shared hosts use PostgreSQL. Both
+// keep org_id and row-level security on every tenant row. This module owns
+// the connection boundary, including the serialized local checkout queue.
 //
 // Two ways to talk to the database, and the difference is the security story:
 //
@@ -14,8 +15,7 @@
 //                         the handful of lookups that happen before a tenant
 //                         is known (which org does this hostname belong to?
 //                         which session does this cookie name?), for org
-//                         creation, and for the Stripe webhook, which arrives
-//                         with no session. test/db-gates.test.js greps the
+//                         creation. test/db-gates.test.js checks the
 //                         server for `system(` and fails the build if it shows
 //                         up outside the modules listed there.
 //
@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { LocalPool } from './local-db.js';
 
 const { Pool } = pg;
 const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
@@ -44,10 +45,25 @@ export function databaseUrl() {
   return process.env.DATABASE_URL || '';
 }
 
+export function localStorage() {
+  const selected = process.env.KADDIYA_STORAGE;
+  if (selected && !['local', 'postgres'].includes(selected)) throw new Error('KADDIYA_STORAGE must be local or postgres.');
+  if (selected === 'local' && databaseUrl()) throw new Error('Both local storage and DATABASE_URL are configured. Choose one explicitly in apps/console/.env.');
+  return selected === 'local' || (!selected && !databaseUrl());
+}
+
+export function localDataDir() {
+  return path.resolve(path.dirname(MIGRATIONS_DIR), '..', process.env.KADDIYA_DATA_DIR || 'data/workspace');
+}
+
 export function db() {
   if (!pool) {
+    if (localStorage()) {
+      pool = new LocalPool(localDataDir());
+      return pool;
+    }
     const url = databaseUrl();
-    if (!url) throw new Error('DATABASE_URL is not set — the console keeps every store in Postgres (ADR 0008 D7).');
+    if (!url) throw new Error('Set DATABASE_URL for PostgreSQL, or use npm run setup for local storage.');
     pool = new Pool({ connectionString: url, max: Number(process.env.PG_POOL_MAX || 8) });
     pool.on('error', (err) => console.error('Postgres pool error:', err.message));
   }

@@ -4,15 +4,33 @@
 //
 // The database name must end in `_test` — these helpers truncate every table.
 
-process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 'postgres://kaddiya@localhost:5433/kaddiya_test';
-if (!/_test(\?.*)?$/.test(process.env.DATABASE_URL)) {
-  throw new Error(`refusing to run tests against ${process.env.DATABASE_URL}: the database name must end in _test`);
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after } from 'node:test';
+
+let testDirectory;
+if (process.env.TEST_DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  process.env.KADDIYA_STORAGE = 'postgres';
+  if (!/_test(\?.*)?$/.test(process.env.DATABASE_URL)) throw new Error('Test database name must end in _test.');
+} else {
+  // Never reuse an operator's database or local data directory in tests.
+  delete process.env.DATABASE_URL;
+  process.env.KADDIYA_STORAGE = 'local';
+  testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'kaddiya-test-'));
+  process.env.KADDIYA_DATA_DIR = testDirectory;
 }
 process.env.KADDIYA_MASTER_KEY = process.env.KADDIYA_MASTER_KEY || '11'.repeat(32);
 process.env.BASE_URL = process.env.BASE_URL || 'http://localhost:3999';
 
 import { migrate, system, close } from '../../server/db.js';
 import * as tenancy from '../../server/tenancy.js';
+
+after(async () => {
+  await close();
+  if (testDirectory) fs.rmSync(testDirectory, { recursive: true, force: true });
+});
 
 const TABLES = [
   'usage_events', 'audit_events', 'notebook_entries', 'conversations', 'members',

@@ -89,9 +89,10 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
     child = spawn(process.execPath, ['server/index.js'], {
       cwd: new URL('..', import.meta.url),
       env: { ...process.env, PORT: String(port), BASE_URL: base, KADDIYA_EDITION: 'self-hosted',
+        KADDIYA_DOCS_SYNC: '0',
         KADDIYA_SETUP_TOKEN: 'operator-test-code', SN_INSTANCE_URL: '', SN_CLIENT_ID: '', SN_CLIENT_SECRET: '',
         ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', KADDIYA_TRIAL_ANTHROPIC_KEY: '', KADDIYA_TRIAL_OPENAI_KEY: '' },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
     child.stdout.on('data', b => { logs += b; });
     child.stderr.on('data', b => { logs += b; });
@@ -104,9 +105,10 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   }
   async function stop() {
     if (!child || child.exitCode !== null) return;
-    const exited = once(child, 'exit'); child.kill(); await exited;
+    const exited = once(child, 'exit'); child.send('shutdown'); await exited;
   }
   t.after(stop);
+  await close();
   await boot();
   const post = (route, body, cookie, origin = base) => fetch(base + route, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body), redirect: 'manual',
@@ -128,6 +130,7 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   const resumed = await (await fetch(base + '/api/org/draft', { headers: { Cookie: cookie } })).json();
   assert.equal(resumed.instances[0].id, instance.id);
   assert.equal(resumed.callback_url, base + '/auth/callback');
+  await stop();
   const org = await tenancy.getOrg(draft.org.id);
   const ctx = tenancy.contextFor(org);
   const user = { sys_id: 'http-admin', user_name: 'http.admin' };
@@ -136,6 +139,7 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   const sid = await createSession({ orgId: org.id, instanceId: instance.id, memberId: member.id, userSysId: user.sys_id, user,
     tokens: { accessToken: 'fake-test-token', refreshToken: 'fake-test-refresh', expiresAt: Date.now() + 3600000 }, ttlMs: 3600000 });
   const auth = { Cookie: `sid=${sid}` };
+  await close(); await boot();
   assert.equal((await fetch(base, { headers: auth, redirect: 'manual' })).headers.get('location'), '/admin?setup=1');
   assert.equal((await fetch(base, { redirect: 'manual' })).headers.get('location'), '/signin');
   assert.equal((await post('/api/org', { name: 'Second workspace', setup_token: 'operator-test-code' })).status, 400);
@@ -145,8 +149,10 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   const invalid = await post('/api/admin/models', { label: 'No key', provider: 'openai', model_id: 'custom' }, `sid=${sid}`);
   assert.equal(invalid.status, 400);
   assert.match((await invalid.json()).error, /API key/, 'self-hosted connections reach validation without a payment gate');
+  await stop();
   const configured = await tenancy.saveModelConnection(ctx, { label: 'Enterprise model', provider: 'openai', model_id: 'custom' }, 'test-key');
   const choice = configured.model_connections[0].id;
+  await close(); await boot();
   const chosen = await post('/api/admin/models', { operation: 'default', id: choice }, `sid=${sid}`);
   assert.equal(chosen.status, 200);
   await stop(); await boot();

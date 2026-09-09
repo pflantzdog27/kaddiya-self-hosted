@@ -60,9 +60,12 @@ browser tab is closed.
 
 ## Storage
 
-PostgreSQL is required. It stores organizations, instances, memberships, sessions,
-conversations, notebook entries, audit events, and usage. Migrations run automatically at
-startup.
+Local installs use an embedded PGlite database stored in `data/workspace/`. It runs inside
+Node without a database server. Shared hosts can set `KADDIYA_STORAGE=postgres` and
+`DATABASE_URL` to use managed PostgreSQL. Both modes store organizations, instances,
+memberships, sessions, conversations, notebook entries, audit events, and usage.
+Migrations and row-level access controls apply to both modes. Local transactions are
+serialized for the embedded connection and the data folder is locked against double opens.
 
 Tenant-owned content and credentials are encrypted using `KADDIYA_MASTER_KEY`. A generated
 development key is acceptable only for local evaluation; deployed environments should inject
@@ -87,10 +90,10 @@ environment variables remain available for existing operator-configured deployme
 
 ## Local commands
 
-Run these from `apps/console`:
+Run these from the repository root:
 
 ```bash
-npm install
+npm run setup
 npm start
 ```
 
@@ -106,9 +109,9 @@ npm test
 ## Important paths
 
 - `server/` — web server, OAuth, agent, providers, tenancy, storage, and action controls
-- `public/` — console UI and public Kaddiya website
+- `public/` — console UI and guided setup
 - `test/` — security, tenancy, provider, action-catalog, and console contracts
-- `../../docs/adr/` — architecture decisions
+- `../../scripts/` — local and optional Docker launchers
 - `../../docs/kit/` — enterprise review and deployment material
 
 ## Status

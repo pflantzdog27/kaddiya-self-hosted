@@ -8,15 +8,17 @@
     "start": "node server/index.js",
     "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
     "db:migrate": "node -e \"import('./server/env.js').then(()=>import('./server/db.js')).then(async m=>{console.log('applied', await m.migrate()); await m.close();})\"",
-    "check": "for f in server/*.js public/*.js; do node --check $f || exit 1; done"
+    "check": "node ../../scripts/check.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.0",
+    "@electric-sql/pglite": "0.5.8",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "proper-lockfile": "4.1.2"
   }
 }

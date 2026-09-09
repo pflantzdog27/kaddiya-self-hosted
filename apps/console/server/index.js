@@ -9,7 +9,7 @@ import { keepNote, discardNote } from './notebook.js';
 import { runAgentTurn, smokeTestModel } from './agent.js';
 import { modelInfo } from './models.js';
 import { warmDocs, defaultFamily } from './docs.js';
-import { migrate } from './db.js';
+import { migrate, close as closeDatabase, localStorage } from './db.js';
 import * as store from './store.js';
 import * as tenancy from './tenancy.js';
 import * as sessions from './sessions.js';
@@ -39,10 +39,6 @@ const cfg = {
 cfg.mode = 'self-hosted';
 cfg.callbackUrl = `${cfg.baseUrl}/auth/callback`;
 
-if (!process.env.DATABASE_URL) {
-  console.error('Missing DATABASE_URL. Every store lives in Postgres (ADR 0008 D7) — see .env.example.');
-  process.exit(1);
-}
 if (cfg.selfHosted && !cfg.selfHosted.clientId) {
   console.error('SN_INSTANCE_URL is set but SN_CLIENT_ID is not. Set both, or neither for the multi-tenant shape.');
   process.exit(1);
@@ -89,8 +85,14 @@ function readCookie(req, name) {
 
 // ---- boot: migrations, then the self-hosted seed ----
 
-await migrate();
+try { await migrate(); }
+catch (err) {
+  console.error(`Could not open the workspace: ${err.message}`);
+  await closeDatabase().catch(() => {});
+  process.exit(1);
+}
 if (cfg.selfHosted) await tenancy.seedSelfHosted(cfg.selfHosted);
+const setupRequiredAtBoot = !(await tenancy.selfHostedDeployment());
 
 setInterval(() => sessions.purgeExpired().catch(() => {}), 60_000).unref();
 
@@ -1175,19 +1177,45 @@ app.use(express.static(PUBLIC_DIR));
 // when it decides IPv6 is available at startup, which it did not there. "::"
 // is dual-stack, so IPv4 health checks and localhost still work. Hosts with no
 // IPv6 at all (some Docker setups) refuse it, so fall back to 0.0.0.0 then.
-const server = app.listen(cfg.port, "::", onListen);
+// Local storage serves this computer only. Shared hosts explicitly opt into
+// a listening address and use a managed PostgreSQL connection.
+const bindHost = localStorage() ? '127.0.0.1' : (process.env.HOST || '::');
+let server = app.listen(cfg.port, bindHost, onListen);
 server.on("error", (err) => {
-  if (err.code !== "EAFNOSUPPORT") throw err;
-  app.listen(cfg.port, "0.0.0.0", onListen);
+  if (err.code === 'EAFNOSUPPORT' && bindHost === '::') {
+    server = app.listen(cfg.port, '0.0.0.0', onListen);
+    server.on('error', failListen);
+  } else failListen(err);
 });
+async function failListen(err) {
+  console.error(err.code === 'EADDRINUSE' ? `Port ${cfg.port} is already in use. Stop the other app or change PORT and BASE_URL in apps/console/.env.` : err.message);
+  await closeDatabase().catch(() => {});
+  process.exit(1);
+}
+let stopping = false;
+async function shutdown() {
+  if (stopping) return;
+  stopping = true;
+  for (const execution of activeStages.values()) execution.controller?.abort();
+  server.close();
+  server.closeAllConnections();
+  await closeDatabase();
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+process.on('message', message => { if (message === 'shutdown') shutdown(); });
 function onListen() {
   console.log(`Kaddiya → ${cfg.baseUrl}  (self-hosted · browser setup at /start · bring your own models)`);
+  process.send?.({ type: 'ready', baseUrl: cfg.baseUrl, setupRequired: setupRequiredAtBoot });
   const info = modelInfo(cfg.model);
   if (process.env.ANTHROPIC_API_KEY && !info.known) console.warn(`⚠️  Unknown model "${cfg.model}" — sending a plain request (no effort, no fallbacks) and no cost estimate.`);
   if (process.env.ANTHROPIC_API_KEY && cfg.effort && !info.supportsEffort) console.warn(`⚠️  ANTHROPIC_EFFORT is set but ${cfg.model} does not support it — ignoring.`);
   // Background-sync the docs for the default family so the first docs
   // question doesn't pay for the clone. Release detection may upgrade the
   // family later; that family syncs lazily on first use.
-  console.log(`Syncing ServiceNow docs (${defaultFamily()}) in the background…`);
-  warmDocs();
+  if (process.env.KADDIYA_DOCS_SYNC !== '0') {
+    console.log(`Syncing ServiceNow docs (${defaultFamily()}) in the background…`);
+    warmDocs();
+  }
 }
