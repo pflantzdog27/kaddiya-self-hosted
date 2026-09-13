@@ -16,9 +16,8 @@
 //   3. the write is audit-logged with approved_by_user: true;
 //   4. it is toggleable by tier (ADR 0010 D2).
 //
-// Growing the catalog means adding an entry here — never a generic
-// write(table, fields). The allow-list getting longer is the product; the
-// allow-list going away is the thing this file exists to prevent.
+// ADR 0013 adds one schema-discovered record action. Its payload is validated
+// from live metadata before review and again at commit; it cannot choose URLs.
 //
 // This module is pure: no instance client, no HTTP, no dependency on any
 // other server module. sn.js and index.js depend on it, not the other way
@@ -101,6 +100,32 @@ const DOCS = {
  *             can click (write-paths.test.js pins both)
  */
 export const ACTIONS = [
+  {
+    id: 'dynamic.apply',
+    tier: 2,
+    label: 'Proposed record',
+    endpoint: 'POST /api/dynamic/apply',
+    instance: { method: 'POST/PATCH', path: '/api/now/table/{table}[/{sys_id}]', discovery: 'Live table and inherited field metadata; security tables require tier 3 and typed approval.' },
+    card: 'dynamic_record',
+    cite: DOCS.tableApi,
+    tool: {
+      name: 'sn_propose_dynamic_record',
+      description: 'Build a review card for creating or updating ONE record when a dedicated proposal tool does not cover its table or fields. Includes catalog item definitions (sc_cat_item), variables (item_option_new), categories, and custom tables. THIS DOES NOT WRITE ANYTHING — only the human can click Create or Apply in normal mode. Read sn_schema and the release documentation first; resolve references to sys_ids and choices to stored values. The server discovers inherited fields, validates the payload, and reads current values for updates. Provide complete scripts. For several related records, propose them in dependency order and use only confirmed sys_ids. Use dedicated tools for ordering items, approvals, change requests, journals, and update sets. Security-sensitive tables require tier 3 and a typed manual approval. If validation refuses a proposal, explain the specific schema, permission, or workflow limit and fix it where possible; never claim an absent preset card makes a supported record impossible.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          operation: { type: 'string', enum: ['create', 'update'] },
+          table: { type: 'string', description: 'Exact existing table name verified on this instance.' },
+          sys_id: { type: 'string', description: 'Required for update; omit for create.' },
+          fields: { type: 'object', description: 'Only fields to set, with scalar stored values. Full code where applicable.', additionalProperties: true },
+          rationale: { type: 'string', description: 'Why this change is needed.' },
+        },
+        required: ['operation', 'table', 'fields'],
+        additionalProperties: false,
+      },
+    },
+  },
+
   {
     id: 'journal.append',
     tier: 1,

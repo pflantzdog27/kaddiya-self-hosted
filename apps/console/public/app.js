@@ -1103,6 +1103,7 @@ function displayOf(v) {
 }
 
 function makeProposalCard(data) {
+  if (data.action === 'dynamic.apply') return makeDynamicRecordCard(data);
   if (data.action === 'task.update') return makeRecordUpdateCard(data);
   if (data.action === 'approval.decide') return makeApprovalCard(data);
   if (data.action === 'config.update') {
@@ -1165,16 +1166,49 @@ function makeProposalCard(data) {
   return card;
 }
 
+function makeDynamicRecordCard(data) {
+  const { table, operation, fields, current, label, name, labels, executable, confirmation } = data;
+  const body = { table, operation, fields, ...(data.sys_id ? { sys_id: data.sys_id, current } : {}) };
+  if (operation === 'update') {
+    return makeRecordUpdateCard({
+      table, sys_id: data.sys_id, number: name, rationale: data.rationale,
+      current, changes: fields, badge: label, title: `Update ${label}`,
+      endpoint: '/api/dynamic/apply', executable, body, confirmation, fieldLabels: labels,
+    });
+  }
+  return makeFieldsProposalCard({
+    title: `Create ${label}`, badge: table, rationale: data.rationale,
+    rows: Object.entries(fields).map(([key, value]) => [labels?.[key] ? `${labels[key]} (${key})` : key, String(value), 'dynamic-value']),
+    caption: 'Nothing is created until you press Create. Created as',
+    verb: 'Create', endpoint: '/api/dynamic/apply', body, executable, confirmation,
+    doneTitle: `${label} created`, doneLine: out => `${out.record?.name || name} created.${out.warnings?.length ? ` ${out.warnings.join(' ')}` : ''}`,
+    doneLink: out => out.record?.link,
+    audit: out => [table, out.record?.sys_id, stamp(), me?.user_name || ''],
+  });
+}
+
+function typedApprovalMarkup(confirmation) {
+  return confirmation ? `<label class="nc-prose">Security-sensitive change. Type <strong>${escapeHtml(confirmation)}</strong> to approve.<input class="dynamic-confirmation" type="text" autocomplete="off" aria-label="Type the record name to approve"></label>` : '';
+}
+
+function bindTypedApproval(card, button, confirmation) {
+  if (!confirmation) return;
+  button.disabled = true;
+  card.querySelector('.dynamic-confirmation').addEventListener('input', event => {
+    button.disabled = event.target.value !== confirmation;
+  });
+}
+
 function makeRecordUpdateCard({
   table, sys_id, number, rationale, current, changes,
   badge = String(table).toUpperCase(), title = 'Proposed update', doneTitle = 'Record updated',
-  endpoint = '/api/record/update', updateSet = null, executable = false,
+  endpoint = '/api/record/update', updateSet = null, executable = false, body = null, confirmation = null, fieldLabels = null,
 }) {
   const card = document.createElement('div');
   const fields = Object.keys(changes || {});
   const label = number || sys_id;
   // A changed script is shown in full, not as a cell — it is executable code.
-  const scriptFields = executable ? fields.filter((f) => /script|condition/.test(f) && typeof changes[f] === 'string' && changes[f].length > 60) : [];
+  const scriptFields = executable ? fields.filter((f) => /script|condition|template|^link$/.test(f) && typeof changes[f] === 'string' && changes[f].length > 60) : [];
   const cellFields = fields.filter((f) => !scriptFields.includes(f));
 
   function renderPending() {
@@ -1191,14 +1225,15 @@ function makeRecordUpdateCard({
       ${cellFields.length ? `<div class="nc-diff">
         <div class="diff-h">${escapeHtml(label)}</div><div class="diff-h">now</div><div class="diff-h">after your click</div>
         ${cellFields.map((f) =>
-          `<div class="diff-f">${escapeHtml(f)}</div><div class="diff-old">${escapeHtml(displayOf(current?.[f]))}</div><div class="diff-new">${escapeHtml(displayOf(changes[f]))}</div>`).join('')}
+          `<div class="diff-f">${escapeHtml(fieldLabels?.[f] ? `${fieldLabels[f]} (${f})` : f)}</div><div class="diff-old">${escapeHtml(displayOf(current?.[f]))}</div><div class="diff-new">${escapeHtml(displayOf(changes[f]))}</div>`).join('')}
       </div>` : ''}
-      ${scriptFields.map((f) => `<div class="nc-fields"><div class="label">${escapeHtml(f)}</div><div class="val">replaced in full — the new ${escapeHtml(f)} follows</div></div><div class="nc-script">${escapeHtml(changes[f])}</div>`).join('')}
+      ${scriptFields.map((f) => `<div class="nc-fields"><div class="label">${escapeHtml(f)}</div><div class="val">replaced in full — the new ${escapeHtml(f)} follows</div></div>${fieldLabels ? `<div class="nc-script">Before:\n${escapeHtml(displayOf(current?.[f]))}</div>` : ''}<div class="nc-script">${escapeHtml(changes[f])}</div>`).join('')}
       ${updateSet !== null ? `<div class="nc-updset">
         <span class="set-label">UPDATE SET</span>
         <span class="set-name">${escapeHtml(updateSet || 'Default')}</span>
         <span class="set-state">${updateSet ? 'in progress' : 'none selected'}</span>
       </div>` : ''}
+      ${typedApprovalMarkup(confirmation)}
       <div class="nc-foot">
         <div class="nc-caption">Nothing changes on ${escapeHtml(label)} until you press Apply. Applies as <span class="hl">${escapeHtml(me?.name || 'you')}</span>.</div>
         <button class="btn-ghost" type="button">Discard</button>
@@ -1207,25 +1242,30 @@ function makeRecordUpdateCard({
 
     card.querySelector('.btn-ghost').addEventListener('click', renderDiscarded);
     const applyBtn = card.querySelector('.btn-primary');
+    bindTypedApproval(card, applyBtn, confirmation);
     applyBtn.addEventListener('click', async () => {
+      if (applyBtn.disabled) return;
+      if (confirmation && card.querySelector('.dynamic-confirmation').value !== confirmation) return;
       applyBtn.disabled = true;
+      if (confirmation) card.querySelector('.dynamic-confirmation').disabled = true;
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ table, sys_id, fields: changes }),
+          body: JSON.stringify({ ...(body || { table, sys_id, fields: changes }), ...(confirmation ? { confirmation: card.querySelector('.dynamic-confirmation').value } : {}) }),
         });
         const out = await res.json();
         if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
-        renderDone(out.record || out.updated || {});
+        renderDone(out.record || out.updated || {}, out.warnings);
       } catch (err) {
         applyBtn.disabled = false;
+        if (confirmation) card.querySelector('.dynamic-confirmation').disabled = false;
         showCardError(card, err);
       }
     });
   }
 
-  function renderDone(record) {
+  function renderDone(record, warnings = []) {
     card.className = 'nc-card done';
     card.innerHTML = `
       <div class="nc-head">
@@ -1234,8 +1274,9 @@ function makeRecordUpdateCard({
         <span class="nc-badge">${escapeHtml(badge)}</span>
         <span class="nc-head-right green">applied by ${escapeHtml(me?.name || 'you')} · ${clock()}</span>
       </div>
+      ${warnings.length ? `<div class="nc-prose">${escapeHtml(warnings.join(' '))}</div>` : ''}
       <div class="nc-fields">${fields.map((f) =>
-        `<div class="label">${escapeHtml(f)}</div><div class="val">${escapeHtml(displayOf(record[f] ?? changes[f]))}</div>`).join('')}</div>
+        `<div class="label">${escapeHtml(f)}</div><div class="val">${escapeHtml(displayOf(record[f] ?? (body ? undefined : changes[f])))}</div>`).join('')}</div>
       <div class="nc-audit">${escapeHtml(table)} · ${escapeHtml(record.number || label)} · ${stamp()} · ${escapeHtml(me?.user_name || '')}</div>`;
   }
 
@@ -1248,14 +1289,14 @@ function makeRecordUpdateCard({
   }
 
   renderPending();
-  card.markCommitted = (out) => renderDone(out?.record || out?.updated || {});
+  card.markCommitted = (out) => renderDone(out?.record || out?.updated || {}, out?.warnings);
   return card;
 }
 
 // A proposal that creates one record from a list of fields: a catalog order,
 // a change request. Same three states as every card; the endpoint and body
 // come from the catalog entry that produced it.
-function makeFieldsProposalCard({ title, badge, rationale, rows, caption, verb, endpoint, body, doneTitle, doneLine, doneLink, audit }) {
+function makeFieldsProposalCard({ title, badge, rationale, rows, caption, verb, endpoint, body, doneTitle, doneLine, doneLink, audit, executable = false, confirmation = null }) {
   const card = document.createElement('div');
 
   function renderPending() {
@@ -1265,11 +1306,13 @@ function makeFieldsProposalCard({ title, badge, rationale, rows, caption, verb, 
         <span class="dot amber pulse-pending"></span>
         <span class="nc-title">${escapeHtml(title)}</span>
         <span class="nc-badge">${escapeHtml(badge)}</span>
+        ${executable ? '<span class="nc-badge exec">EXECUTABLE CODE</span>' : ''}
         <span class="nc-head-right amber">pending your approval</span>
       </div>
       ${rationale ? `<div class="nc-prose">${escapeHtml(rationale)}</div>` : ''}
       <div class="nc-fields wide">${rows.map(([label, value, cls]) =>
         `<div class="label">${escapeHtml(label)}</div><div class="val${cls ? ` ${cls}` : ''}">${escapeHtml(value)}</div>`).join('')}</div>
+      ${typedApprovalMarkup(confirmation)}
       <div class="nc-foot">
         <div class="nc-caption">${escapeHtml(caption)} <span class="hl">${escapeHtml(me?.name || 'you')}</span>.</div>
         <button class="btn-ghost" type="button">Discard</button>
@@ -1278,19 +1321,24 @@ function makeFieldsProposalCard({ title, badge, rationale, rows, caption, verb, 
 
     card.querySelector('.btn-ghost').addEventListener('click', renderDiscarded);
     const btn = card.querySelector('.btn-primary');
+    bindTypedApproval(card, btn, confirmation);
     btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      if (confirmation && card.querySelector('.dynamic-confirmation').value !== confirmation) return;
       btn.disabled = true;
+      if (confirmation) card.querySelector('.dynamic-confirmation').disabled = true;
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, ...(confirmation ? { confirmation: card.querySelector('.dynamic-confirmation').value } : {}) }),
         });
         const out = await res.json();
         if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
         renderDone(out);
       } catch (err) {
         btn.disabled = false;
+        if (confirmation) card.querySelector('.dynamic-confirmation').disabled = false;
         showCardError(card, err);
       }
     });

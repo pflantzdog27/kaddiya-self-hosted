@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Anthropic from '@anthropic-ai/sdk';
+import { prepareDynamicRecord } from './dynamic-records.js';
 import { modelInfo, estimateCost } from './models.js';
 import { createOpenAIClient } from './providers/openai.js';
 import { createResponsesClient } from './providers/responses.js';
@@ -291,7 +292,7 @@ async function propose(ctx, emit, actionId, body, cardEvent, cardData, reply) {
   }
 }
 
-async function executeTool(sn, name, input, emit, ctx = {}) {
+export async function executeTool(sn, name, input, emit, ctx = {}) {
   if (ctx.scope?.readOnly && name.startsWith('sn_propose_')) throw new Error('This stage is read-only.');
   switch (name) {
     case 'sn_query': return sn.queryTable(input);
@@ -344,6 +345,15 @@ async function executeTool(sn, name, input, emit, ctx = {}) {
     // plan-approved run (ADR 0011 D3) `ctx.scope.planCommit` is set, and
     // propose() commits the same payload through the same catalog function
     // right after drawing the card, on the approving user's token.
+    case 'sn_propose_dynamic_record': {
+      const prepared = await prepareDynamicRecord(sn, input, ctx.scope?.actionsTiers);
+      // Security cards always remain manual, even during an authorized run.
+      const proposalCtx = prepared.tier === 3 ? { ...ctx, scope: { ...ctx.scope, planCommit: null } } : ctx;
+      return propose(proposalCtx, emit, 'dynamic.apply', prepared,
+        'proposal', { action: 'dynamic.apply', ...prepared, rationale: input.rationale || '' },
+        { status: 'proposal_shown_to_user', note: 'The validated record is ready for review. Nothing has been written. Security-sensitive cards require typing the record name; never claim completion until the commit succeeds.' });
+    }
+
     case 'sn_propose_reply':
       return propose(ctx, emit, 'journal.append',
         { table: input.table, sys_id: input.sys_id, field: input.field, text: input.text },
@@ -447,6 +457,7 @@ function summarize(name, result) {
   if (name === 'sn_my_work') return `${result.records?.length ?? 0} on queue`;
   if (name === 'sn_similar') return `${result.records?.length ?? 0} prior · ${result.strategy}`;
   if (name === 'sn_record') return result.record?.number || 'record';
+  if (name === 'sn_propose_dynamic_record') return 'record card — awaiting your approval';
   if (name === 'sn_propose_reply') return 'draft — awaiting your approval';
   if (name === 'sn_propose_artifact') return 'proposal — awaiting your approval';
   if (name === 'sn_propose_record_update') return 'proposal — awaiting your approval';

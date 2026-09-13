@@ -14,7 +14,8 @@
 // This module is pure of HTTP: it throws CommitError with a status the
 // endpoint maps to a response, and it never sees a session or a request.
 
-import vm from 'node:vm';
+import { scriptProblems } from './script-validation.js';
+export { checkScript, scriptProblems } from './script-validation.js';
 import { ARTIFACT_TABLES } from './sn.js';
 import { TASK_TABLES, TASK_FIELDS, CHANGE_TYPES, CHANGE_FIELDS, actionById } from './actions.js';
 
@@ -27,44 +28,20 @@ export class CommitError extends Error {
 
 const bad = (message) => new CommitError(400, message);
 
-/**
- * A script that will not parse will not save on the instance either, and the
- * developer would see the failure only after clicking. Compile it first
- * (`vm.Script` parses; it never runs). ServiceNow server scripts are ES5-ish
- * JavaScript; anything the Node parser rejects, Rhino rejects too.
- */
-export function checkScript(source, label = 'script') {
-  if (typeof source !== 'string' || !source.trim()) return null;
-  try {
-    // eslint-disable-next-line no-new
-    new vm.Script(source, { filename: `${label}.js` });
-    return null;
-  } catch (err) {
-    return `${label} does not parse: ${err.message}`;
-  }
-}
-
-const SCRIPT_FIELDS = ['script', 'condition', 'client_script', 'script_plain', 'link'];
-
-export function scriptProblems(fields) {
-  const problems = [];
-  for (const f of SCRIPT_FIELDS) {
-    if (typeof fields?.[f] !== 'string' || fields[f].length < 20) continue;
-    const problem = checkScript(fields[f], f);
-    if (problem) problems.push(problem);
-  }
-  // A Service Portal widget's option schema is JSON; the instance rejects
-  // anything else at save time, so refuse it here for the same reason.
-  if (typeof fields?.option_schema === 'string' && fields.option_schema.trim()) {
-    try { JSON.parse(fields.option_schema); } catch (err) { problems.push(`option_schema is not valid JSON: ${err.message}`); }
-  }
-  return problems;
-}
-
 // Every commit: (deps, body) → the JSON the endpoint answers with.
 // deps = { sn, audit }: the user's instance client, and an audit sink that
 // already carries the user and (for a plan) the run.
 const COMMITS = {
+  'dynamic.apply': async ({ sn, audit, actionsTiers, automatic }, body) => {
+    try {
+      const { record, warnings } = await sn.applyDynamicRecord(body, { actionsTiers, automatic });
+      await audit({ action: 'dynamic_apply', operation: body.operation, table: body.table, sys_id: record.sys_id, fields: Object.keys(body.fields), warnings, approved_by_user: true });
+      return { ok: true, record, warnings };
+    } catch (err) {
+      await audit({ action: 'dynamic_apply_failed', table: body?.table, operation: body?.operation, error: String(err.message) });
+      throw new CommitError(err.status || 502, String(err.message));
+    }
+  },
   'journal.append': async ({ sn, audit }, body) => {
     const { table, sys_id, field, text } = body || {};
     if (!table || !sys_id || !text) throw bad('table, sys_id and text are required');

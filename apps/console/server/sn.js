@@ -1,3 +1,4 @@
+import { prepareDynamicRecord, checkDynamicApproval } from './dynamic-records.js';
 // ServiceNow REST client bound to one user's OAuth tokens.
 // Every call runs as that user — ACLs, roles, and user criteria are enforced
 // by the platform, never re-implemented here (ADR 0002).
@@ -699,6 +700,37 @@ export class SnClient {
       state: pick('state'),
       type,
       link: pick('sys_id') ? `${this.cfg.instanceUrl}/change_request.do?sys_id=${pick('sys_id')}` : undefined,
+    };
+  }
+
+  /** One schema-validated record, on the same user token as every other write. */
+  async applyDynamicRecord(body, { actionsTiers, automatic = false } = {}) {
+    const prepared = await prepareDynamicRecord(this, body, actionsTiers);
+    checkDynamicApproval(prepared, body, automatic);
+    const { table, operation, sys_id, fields } = prepared;
+    const pathname = `/api/now/table/${table}${operation === 'update' ? `/${sys_id}` : ''}`;
+    const url = new URL(this.cfg.instanceUrl + pathname);
+    url.searchParams.set('sysparm_input_display_value', 'false');
+    url.searchParams.set('sysparm_display_value', 'false');
+    url.searchParams.set('sysparm_exclude_reference_link', 'true');
+    url.searchParams.set('sysparm_fields', ['sys_id', ...Object.keys(fields)].join(','));
+    const res = await this.write(operation === 'create' ? 'POST' : 'PATCH', url, fields);
+    if (!res.ok) {
+      const detail = safeErrorDetail(await res.text().catch(() => ''));
+      throw new Error(`ServiceNow ${res.status} applying ${table}${detail ? `: ${detail}` : ''}`);
+    }
+    const record = (await res.json()).result;
+    if (!record?.sys_id) throw new Error('ServiceNow returned no record id. Check the instance before retrying this proposal.');
+    const stored = value => value && typeof value === 'object' ? value.value : value;
+    const unconfirmed = Object.keys(fields).filter(name => {
+      if (!Object.hasOwn(record, name)) return true;
+      const actual = stored(record[name]);
+      if (typeof fields[name] === 'boolean') return ![String(fields[name]), fields[name] ? '1' : '0'].includes(String(actual));
+      return String(actual ?? '') !== String(fields[name]);
+    });
+    return {
+      record: { ...record, table, link: `${this.cfg.instanceUrl}/${table}.do?sys_id=${encodeURIComponent(record.sys_id)}` },
+      warnings: unconfirmed.length ? [`Record saved, but these values were not confirmed: ${unconfirmed.join(', ')}. Read the record before making further changes; do not repeat creation.`] : [],
     };
   }
 

@@ -681,13 +681,14 @@ function commitRoute(actionId) {
     if (activeStages.has(executionKey(session))) return res.status(409).json({ error: 'Wait for the active task to finish or stop it before applying a manual change.' });
     try {
       const sn = await snFor(session);
-      res.json(await commit(actionId, { sn, audit: (entry) => auditFor(session, entry) }, req.body || {}));
+      res.json(await commit(actionId, { sn, actionsTiers: session.org.actions_tiers, audit: (entry) => auditFor(session, entry) }, req.body || {}));
     } catch (err) {
       const status = err instanceof CommitError ? err.status : 502;
       res.status(status).json({ error: String(err.message) });
     }
   };
 }
+app.post('/api/dynamic/apply', commitRoute('dynamic.apply'));       // Create or Apply, on a schema-discovered record card
 app.post('/api/record/comment', commitRoute('journal.append'));      // Send, on a draft reply
 app.post('/api/artifact/create', commitRoute('config.create'));      // Create, on a proposed change
 app.post('/api/update-set/create', commitRoute('update_set.create')); // Create, on a proposed update set
@@ -869,7 +870,7 @@ app.post('/api/runs/:id/stage', async (req, res) => {
         const refused = runs.planCommitAllowed(fresh.org, actionId);
         if (refused) throw new Error(refused);
         return commit(actionId, {
-          sn,
+          sn, actionsTiers: fresh.org.actions_tiers, automatic: true,
           audit: (entry) => auditFor(session, { ...entry, run: run.id, approval: `plan:${run.id}` }),
         }, body);
       };
@@ -886,7 +887,7 @@ app.post('/api/runs/:id/stage', async (req, res) => {
         const sn = await snFor(fresh);
         execution.controller.signal.throwIfAborted();
         return commit(actionId, {
-          sn,
+          sn, actionsTiers: fresh.org.actions_tiers, automatic: true,
           audit: entry => auditFor(fresh, { ...entry, conversation: conv.id, run: conv.run.id, approval: `autonomous:${conv.run.id}` }),
         }, body);
       };
