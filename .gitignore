@@ -18,3 +18,7 @@ design/**/kaddiya-*.html
 
 # Agent worktrees (git worktrees, ~180 MB, recreated on demand)
 .claude/worktrees/
+
+# Demo scripts name a live developer instance and its OAuth client ID;
+# they stay local to the presenter's machine, not in the public repo.
+docs/demo-*.md
