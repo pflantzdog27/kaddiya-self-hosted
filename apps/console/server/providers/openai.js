@@ -10,8 +10,7 @@
 // What is dropped, on purpose: `cache_control` (no prompt-caching hints in
 // this dialect — OpenAI caches on its own and reports `cached_tokens`, which
 // we surface as cache_read_input_tokens so the cost line stays honest),
-// `betas`, `fallbacks`, `output_config` (Anthropic-only; agent.js never adds
-// them for this kind). Nothing is invented: a request that needs a feature
+// `betas` and `fallbacks`. Effort is translated to `reasoning_effort`. Nothing is invented: a request that needs a feature
 // this dialect lacks fails at the endpoint with the endpoint's own words.
 //
 // The translation functions are pure and exported so they can be tested
@@ -107,6 +106,7 @@ export function toChatRequest(params) {
     stream: true,
     stream_options: { include_usage: true },
   };
+  if (params.output_config?.effort) body.reasoning_effort = params.output_config.effort;
   if (params.max_tokens != null) body.max_completion_tokens = params.max_tokens;
   const tools = toChatTools(params.tools);
   if (tools) body.tools = tools;

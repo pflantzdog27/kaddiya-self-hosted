@@ -59,13 +59,24 @@
 
       <footer class="composer">
         <div class="work-controls">
-          <label id="model-select-label" for="model-select" hidden>Model</label>
-          <select id="model-select" class="model-select" aria-label="Model for the next turn" hidden></select>
-          <label for="work-mode">Work style</label>
-          <select id="work-mode" class="model-select"><option value="review">Review each change</option><option value="guided">Guided task</option><option value="autonomous">Autonomous</option></select>
-          <label for="work-template" id="work-template-label" hidden>Task</label>
-          <select id="work-template" class="model-select" hidden><option value="build">Build a change</option><option value="investigate">Investigate a case</option><option value="audit">Audit access or data</option></select>
+          <div class="work-control">
+            <label id="model-select-label" for="model-select" hidden>Model</label>
+            <select id="model-select" class="model-select" aria-label="Model for the next turn" hidden></select>
+          </div>
+          <div class="work-control">
+            <label id="effort-select-label" for="effort-select" hidden>Effort</label>
+            <select id="effort-select" class="model-select" aria-label="Effort for the next message or task" aria-describedby="effort-hint" hidden></select>
+          </div>
+          <div class="work-control">
+            <label for="work-mode">Work style</label>
+            <select id="work-mode" class="model-select"><option value="review">Review each change</option><option value="guided">Guided task</option><option value="autonomous">Autonomous</option></select>
+          </div>
+          <div class="work-control">
+            <label for="work-template" id="work-template-label" hidden>Task</label>
+            <select id="work-template" class="model-select" hidden><option value="build">Build a change</option><option value="investigate">Investigate a case</option><option value="audit">Audit access or data</option></select>
+          </div>
         </div>
+        <div id="effort-hint" class="effort-hint" aria-live="polite" hidden></div>
         <div id="autonomy-warning" class="autonomy-warning" hidden>
           <p id="autonomy-context"></p>
           <p>Kaddiya can apply changes without asking again, including configuration code and messages to people. Provider charges can accumulate. It checks the plan and verifies its work, but it can make mistakes. Keep this tab open. Stop prevents later actions; it cannot undo a write already sent.</p>

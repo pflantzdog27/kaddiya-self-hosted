@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Anthropic from '@anthropic-ai/sdk';
 import { prepareDynamicRecord } from './dynamic-records.js';
-import { modelInfo, estimateCost } from './models.js';
+import { modelInfo, estimateCost, resolveEffort } from './models.js';
 import { createOpenAIClient } from './providers/openai.js';
 import { createResponsesClient } from './providers/responses.js';
 import { detectRelease, searchDocs, getDoc, SUPPORTED_FAMILIES } from './docs.js';
@@ -64,14 +64,14 @@ export function clientFor(model = {}) {
  * own words when it fails.
  */
 export async function smokeTestModel(model) {
-  const info = modelInfo(model.model, { kind: model.kind === 'openai' ? 'openai' : 'anthropic' });
+  const effort = resolveEffort(model.model, { kind: model.kind, requested: model.effort });
   const stream = clientFor(model).stream({
     model: model.model,
-    max_tokens: 64,
+    // Reasoning tokens share the output budget; leave room for the tool call.
+    max_tokens: modelInfo(model.model).supportsEffort ? 4096 : 64,
     // The effort dial goes through the smoke test as well: a value this
-    // model rejects (gpt-6-astra refuses 'none') then fails here, with the
-    // endpoint's own words, instead of on the org's first turn.
-    ...(model.effort && info.supportsEffort ? { output_config: { effort: model.effort } } : {}),
+    // model rejects fails validation here before the org's first turn.
+    ...(effort ? { output_config: { effort } } : {}),
     tools: [{
       name: 'ping',
       description: 'Reply through this tool.',
@@ -496,7 +496,7 @@ export async function runAgentTurn({ cfg, sn, user, messages, userText, emit, au
   const systemFull = systemExtra ? `${systemText}\n\n${systemExtra}` : systemText;
 
   const modelId = model?.model || cfg.model;
-  const effort = model?.effort ?? cfg.effort;
+  const effort = resolveEffort(modelId, { kind: model?.kind, configured: model?.effort ?? cfg.effort });
   const client = clientFor(model);
   const info = modelInfo(modelId, { kind: client.kind });
   const isAnthropic = client.kind === 'anthropic';
@@ -533,8 +533,7 @@ export async function runAgentTurn({ cfg, sn, user, messages, userText, emit, au
     };
     // Effort is the main quality/cost dial — but it errors on models that
     // predate it (e.g. Haiku 4.5), so only send it where it is supported.
-    // Each adapter renders it in its own dialect, or drops it: Chat
-    // Completions has no equivalent that works alongside tools.
+    // Each adapter renders it in its own dialect, including Chat Completions.
     if (effort && info.supportsEffort) {
       params.output_config = { effort };
     }

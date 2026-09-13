@@ -88,6 +88,16 @@ Set `KADDIYA_EDITION=self-hosted` to use the browser guide without preview or bi
 The root `npm run setup` command configures this automatically. `SN_*` and `ANTHROPIC_*`
 environment variables remain available for existing operator-configured deployments.
 
+## Chat effort
+
+The composer offers **Effort** beside the model selector.
+The available levels depend on the model. **Default** uses the configured connection
+setting or the provider default. Higher effort can take longer and use more tokens.
+The browser remembers each user's choice per workspace and connection. Unknown model
+aliases and models without effort support show “Not available.” Guided and autonomous
+tasks retain their starting model and effort through all stages; composer changes apply
+to the next message or new task.
+
 ## Local commands
 
 Run these from the repository root:

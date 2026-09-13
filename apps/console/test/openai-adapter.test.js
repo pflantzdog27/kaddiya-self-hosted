@@ -42,6 +42,8 @@ test('request translation: system, tools, tool calls and results, tool_choice; A
   assert.equal(body.stream, true);
   assert.deepEqual(body.stream_options, { include_usage: true });
   assert.equal(body.max_completion_tokens, 16000);
+  assert.equal(body.reasoning_effort, 'low');
+  assert.equal('reasoning_effort' in toChatRequest({ model: 'gpt-4.1', messages: [] }), false);
 
   assert.deepEqual(body.messages, [
     { role: 'system', content: 'You are the caddie.' },

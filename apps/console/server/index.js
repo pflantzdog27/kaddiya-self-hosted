@@ -7,7 +7,7 @@ import { SnClient, exchangeCode, revokeToken, ARTIFACT_TABLES } from './sn.js';
 import { TASK_TABLES, TASK_FIELDS, CHANGE_TYPES, CHANGE_FIELDS, actionById, enabledActions } from './actions.js';
 import { keepNote, discardNote } from './notebook.js';
 import { runAgentTurn, smokeTestModel } from './agent.js';
-import { modelInfo } from './models.js';
+import { modelInfo, resolveEffort } from './models.js';
 import { warmDocs, defaultFamily } from './docs.js';
 import { migrate, close as closeDatabase, localStorage } from './db.js';
 import * as store from './store.js';
@@ -456,7 +456,7 @@ async function meFor(session) {
     default_model: billing.availableModels(session.org)[0]?.id || gate.model.model,
     autonomous_available: session.org.autonomous_mode === true,
     instance_non_production: session.instance.non_production === true,
-    effort: info.supportsEffort ? (session.org.edition === 'self-hosted' ? cfg.effort : session.org.model_effort || '') : '',
+    effort: billing.availableModels(session.org)[0]?.default_effort || '',
     plan: gate.plan,
     usage: gate.usage,
     gate: gate.ok ? { ok: true } : { ok: false, reason: gate.reason, message: gate.message },
@@ -569,16 +569,20 @@ app.post('/api/chat', async (req, res) => {
   }
   if (!userText) return res.status(400).json({ error: 'empty message' });
 
-  const conv = req.body?.conversation_id
-    ? await store.getConversation(session.scope, req.body.conversation_id)
-    : await store.createConversation(session.scope);
-  if (!conv) return res.status(404).json({ error: 'conversation not found' });
-
   // The turn may name a model, but only one of the configured connections.
   const requestedModel = req.body?.model ? String(req.body.model).slice(0, 160) : null;
   if (requestedModel && !billing.availableModels(session.org).some((m) => m.id === requestedModel)) {
     return res.status(400).json({ error: `${requestedModel} is not a model this org can run a turn on` });
   }
+
+  const choice = billing.availableModels(session.org).find(m => m.id === requestedModel) || billing.availableModels(session.org)[0];
+  try { resolveEffort(choice?.model_id, { kind: choice?.kind, requested: req.body?.effort }); }
+  catch (err) { return res.status(400).json({ error: err.message }); }
+
+  const conv = req.body?.conversation_id
+    ? await store.getConversation(session.scope, req.body.conversation_id)
+    : await store.createConversation(session.scope);
+  if (!conv) return res.status(404).json({ error: 'conversation not found' });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -592,7 +596,7 @@ app.post('/api/chat', async (req, res) => {
   // the contract): a turn that would exceed the allowance is a paywall card.
   let gate;
   try {
-    gate = await billing.gateTurn(session.org, session.ctx, { orgModelKey: tenancy.orgModelKey, connectionKey: tenancy.modelConnectionKey, modelId: requestedModel });
+    gate = await billing.gateTurn(session.org, session.ctx, { orgModelKey: tenancy.orgModelKey, connectionKey: tenancy.modelConnectionKey, modelId: requestedModel, effort: req.body?.effort });
   } catch (err) {
     emit('error', { message: `Could not check this org's plan: ${err.message}` });
     return res.end();
@@ -736,11 +740,16 @@ app.post('/api/runs', async (req, res) => {
   if (activeStages.has(executionKey(session))) return res.status(409).json({ error: 'Another task is active on this instance.' });
   const model = req.body?.model || billing.availableModels(session.org)[0]?.id;
   if (model && !billing.availableModels(session.org).some(m => m.id === model)) return res.status(400).json({ error: 'Choose an available model.' });
+  const choice = billing.availableModels(session.org).find(m => m.id === model);
+  let effort;
+  try { effort = resolveEffort(choice?.model_id, { kind: choice?.kind, requested: req.body?.effort, configured: choice?.default_effort }); }
+  catch (err) { return res.status(400).json({ error: err.message }); }
   const conv = req.body?.conversation_id ? await store.getConversation(session.scope, req.body.conversation_id) : await store.createConversation(session.scope);
   if (!conv) return res.status(404).json({ error: 'Conversation not found.' });
   if (conv.run?.status === 'active') return res.status(409).json({ error: 'Finish or stop the current task first.' });
   conv.run = runs.newRun({ goal, template: req.body?.template, policy });
   conv.run.model = model;
+  conv.run.effort = effort;
   if (policy === 'autonomous') conv.run.authorization = { user: session.userSysId, session: session.sidHash.toString('hex'), instance: session.instanceId, at: new Date().toISOString() };
   await store.saveConversation(session.scope, conv);
   await auditFor(session, { action: 'run_start', conversation: conv.id, run: conv.run.id, template: conv.run.template, policy, approved_by_user: policy === 'autonomous', approval: policy === 'autonomous' ? `autonomous:${conv.run.id}` : undefined });
@@ -827,7 +836,7 @@ app.post('/api/runs/:id/stage', async (req, res) => {
 
   let gate;
   try {
-    gate = await billing.gateTurn(session.org, session.ctx, { orgModelKey: tenancy.orgModelKey, connectionKey: tenancy.modelConnectionKey, modelId: conv.run.model });
+    gate = await billing.gateTurn(session.org, session.ctx, { orgModelKey: tenancy.orgModelKey, connectionKey: tenancy.modelConnectionKey, modelId: conv.run.model, effort: conv.run.effort });
   } catch (err) {
     emit('error', { message: `Could not check this org's plan: ${err.message}` });
     return res.end();
@@ -836,6 +845,8 @@ app.post('/api/runs/:id/stage', async (req, res) => {
     emit('paywall', { reason: gate.reason, message: gate.message, plan: gate.plan, usage: gate.usage, admin: isAdmin(session) });
     return res.end();
   }
+
+  if (conv.run.effort === '') gate.model.effort = '';
 
   const messages = conv.messages.slice(-60);
   const scope = { ...session.scope, actionsTiers: session.org.actions_tiers, readOnly: next.stage !== 'build' || conv.run.template === 'audit' };

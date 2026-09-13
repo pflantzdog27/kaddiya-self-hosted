@@ -5,7 +5,7 @@
 // environment or through the Admin model-connection screen.
 
 import { withOrg } from './db.js';
-import { modelInfo } from './models.js';
+import { modelInfo, effortValues, resolveEffort } from './models.js';
 import { DEFAULT_OPENAI_BASE_URL } from './providers/openai.js';
 
 export const PLANS = {
@@ -31,7 +31,7 @@ export function defaultModelFor(provider) {
 }
 
 /** Models configured for this deployment, ordered with the selected default first. */
-export function availableModels(org = {}) {
+function modelChoices(org = {}) {
   const own = (org.model_connections || []).map((connection) => ({
     id: connection.id,
     model_id: connection.model_id,
@@ -45,6 +45,19 @@ export function availableModels(org = {}) {
   }
   const preferred = org.default_model_connection;
   return preferred ? [...own.filter((model) => model.id === preferred), ...own.filter((model) => model.id !== preferred)] : own;
+}
+
+/** Public capabilities and defaults, without credentials. */
+export function availableModels(org = {}) {
+  return modelChoices(org).map((model) => {
+    const connection = (org.model_connections || []).find((candidate) => candidate.id === model.id);
+    const configured = (connection ? connection.effort : process.env.ANTHROPIC_EFFORT) || '';
+    return {
+      ...model,
+      effort_values: effortValues(model.model_id, { kind: model.kind }),
+      default_effort: resolveEffort(model.model_id, { kind: model.kind, configured }),
+    };
+  });
 }
 
 export async function modelConfigFor(org, ctx, { connectionKey, modelId } = {}) {
@@ -97,6 +110,7 @@ export async function usageSummary(ctx) {
 export async function gateTurn(org, ctx, deps = {}) {
   const plan = planFor(org);
   const [usage, model] = await Promise.all([usageSummary(ctx), modelConfigFor(org, ctx, deps)]);
+  model.effort = resolveEffort(model.model, { kind: model.kind, requested: deps.effort, configured: model.effort });
   const base = { plan, usage, model: { provider: model.provider, kind: model.kind, label: model.label, model: model.model } };
   if (!model.apiKey) {
     return { ...base, ok: false, reason: 'no_model_key', message: 'Add and test your first model in Admin → Your models to finish setup.' };

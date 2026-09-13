@@ -100,6 +100,8 @@ function renderModelBadge() {
     const left = Math.max(0, (me.plan?.trial_budget_usd || 5) - (me.usage?.trial_spend_usd || 0));
     text += ` · preview · $${left.toFixed(2)} left`;
   } else text += me.plan?.id === 'free' ? ' · not available on the preview' : ' · your API · no Kaddiya cap';
+  const effort = selectedEffort() || connection?.default_effort;
+  if (effort) text += ` · ${effort} effort`;
   badge.textContent = text;
   badge.title = 'Choose a tested model connection. Your provider’s charges and rate limits still apply.';
 }
@@ -193,10 +195,14 @@ async function send() {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, conversation_id: currentConv, model: selectedModel() || undefined, attachments }),
+      body: JSON.stringify({ message: text, conversation_id: currentConv, model: selectedModel() || undefined, effort: selectedEffort(), attachments }),
     });
     if (res.status === 401) return location.assign('/signin');
-    if (!res.ok || !res.body) throw new Error(`Server error (${res.status})`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Server error (${res.status})`);
+    }
+    if (!res.body) throw new Error('The response could not be streamed.');
 
     for await (const { event, data } of sseEvents(res.body)) {
       if (handleSharedEvent(event, data, assistant, textEl, toolCards)) continue;
@@ -1729,11 +1735,49 @@ function renderModelSelect() {
   }
   sel.value = models.some((m) => m.id === remembered) ? remembered : (me.default_model || models[0].id);
   sel.hidden = false;
+  renderEffortSelect();
   renderModelBadge();
   sel.addEventListener('change', () => {
     try { localStorage.setItem(`kd.model.${me.org.id}`, sel.value); } catch { /* ignore */ }
+    renderEffortSelect();
     renderModelBadge();
   });
+}
+
+const EFFORT_LABELS = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Maximum' };
+
+function selectedEffort() {
+  const sel = document.getElementById('effort-select');
+  return sel && !sel.disabled && !sel.hidden ? sel.value : '';
+}
+
+function renderEffortSelect() {
+  const sel = document.getElementById('effort-select');
+  if (!sel) return;
+  const model = me?.models?.find(m => m.id === selectedModel());
+  const values = model?.effort_values || [];
+  const key = `kd.effort.${me?.org?.id}.${me?.user_name}.${selectedModel()}`;
+  let remembered = '';
+  try { remembered = localStorage.getItem(key) || ''; } catch { /* storage unavailable */ }
+  sel.replaceChildren();
+  const option = (value, label) => {
+    const o = document.createElement('option'); o.value = value; o.textContent = label; sel.appendChild(o);
+  };
+  option('', values.length ? (model.default_effort ? `Default (${EFFORT_LABELS[model.default_effort] || model.default_effort})` : 'Default') : 'Not available');
+  for (const value of values) option(value, EFFORT_LABELS[value] || value);
+  sel.value = values.includes(remembered) ? remembered : '';
+  sel.hidden = !model;
+  sel.disabled = !values.length;
+  document.getElementById('effort-select-label').hidden = !model;
+  const hint = document.getElementById('effort-hint');
+  hint.hidden = !model;
+  hint.textContent = values.length
+    ? 'Higher effort can take longer and use more tokens. Applies to your next message or new task.'
+    : 'Effort control is not available for this model connection.';
+  sel.onchange = () => {
+    try { localStorage.setItem(key, sel.value); } catch { /* storage unavailable */ }
+    renderModelBadge();
+  };
 }
 
 // ---- attachments: text files dropped on the composer ----
@@ -1821,7 +1865,7 @@ async function startStagedTask(text) {
   try {
     const res = await fetch('/api/runs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: text, conversation_id: currentConv || undefined, template: document.getElementById('work-template').value, policy, acknowledged: policy === 'autonomous', model: selectedModel(), attachments: pendingFiles }),
+      body: JSON.stringify({ goal: text, conversation_id: currentConv || undefined, template: document.getElementById('work-template').value, policy, acknowledged: policy === 'autonomous', model: selectedModel(), effort: selectedEffort(), attachments: pendingFiles }),
     });
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
@@ -1937,6 +1981,7 @@ function renderRunRail(run) {
   const stageNow = run.stage === 'build_pending' ? 'build' : run.stage;
   const at = run.status === 'done' ? order.length : order.indexOf(stageNow);
   rail.innerHTML = `
+    <div class="effort-hint">${escapeHtml(me?.models?.find(m => m.id === run.model)?.label || run.model || 'Default model')} · ${escapeHtml(run.effort || 'Default')} effort</div>
     <div class="run-rail-stages">${stages.map((s, i) => {
       const state = run.status === 'done' || i < at ? 'done' : i === at ? (runBusy ? 'running' : 'current') : 'todo';
       return `<span class="run-stage ${state}"><span class="dot"></span>${escapeHtml(s.label)}</span>`;

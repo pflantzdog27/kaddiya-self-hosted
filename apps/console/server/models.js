@@ -21,6 +21,14 @@
 // date (the gpt-5.6 family), are left out on purpose: an unpriced model
 // cannot be trial-eligible because the trial budget gate sums cost_usd.
 
+// Effort capabilities checked 2026-09-10 against the provider model pages:
+// https://developers.openai.com/api/docs/models/gpt-5.4
+// https://developers.openai.com/api/docs/models/gpt-5.4-mini
+// https://developers.openai.com/api/docs/models/gpt-5.4-nano
+// https://developers.openai.com/api/docs/models/gpt-5.1
+// https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5
+// https://developers.openai.com/api/docs/models/gpt-6-astra
+// https://platform.claude.com/docs/en/build-with-claude/effort
 export const MODELS = {
   'claude-haiku-4-5': {
     kind: 'anthropic',
@@ -37,6 +45,7 @@ export const MODELS = {
     input: 2, output: 10,
     contextTokens: 1_000_000,
     supportsEffort: true,
+    effortValues: ['low', 'medium', 'high', 'xhigh', 'max'],
     supportsFallbacks: false,
     maxToolResultChars: 30_000,
   },
@@ -46,6 +55,7 @@ export const MODELS = {
     input: 5, output: 25,
     contextTokens: 1_000_000,
     supportsEffort: true,
+    effortValues: ['low', 'medium', 'high', 'xhigh', 'max'],
     supportsFallbacks: true,
     maxToolResultChars: 30_000,
   },
@@ -55,6 +65,7 @@ export const MODELS = {
     input: 10, output: 50,
     contextTokens: 1_000_000,
     supportsEffort: true,
+    effortValues: ['low', 'medium', 'high', 'xhigh', 'max'],
     supportsFallbacks: true,
     maxToolResultChars: 30_000,
   },
@@ -90,7 +101,8 @@ export const MODELS = {
     label: 'GPT-5.4',
     input: 2.5, cachedInput: 0.25, output: 15,
     contextTokens: 1_050_000,
-    supportsEffort: false,
+    supportsEffort: true,
+    effortValues: ['none', 'low', 'medium', 'high', 'xhigh'],
     supportsFallbacks: false,
     maxToolResultChars: 30_000,
   },
@@ -99,7 +111,8 @@ export const MODELS = {
     label: 'GPT-5.4 mini',
     input: 0.75, cachedInput: 0.075, output: 4.5,
     contextTokens: 400_000,
-    supportsEffort: false,
+    supportsEffort: true,
+    effortValues: ['none', 'low', 'medium', 'high', 'xhigh'],
     supportsFallbacks: false,
     maxToolResultChars: 30_000,
   },
@@ -108,7 +121,8 @@ export const MODELS = {
     label: 'GPT-5.4 nano',
     input: 0.2, cachedInput: 0.02, output: 1.25,
     contextTokens: 400_000,
-    supportsEffort: false,
+    supportsEffort: true,
+    effortValues: ['none', 'low', 'medium', 'high', 'xhigh'],
     supportsFallbacks: false,
     maxToolResultChars: 12_000,
   },
@@ -117,7 +131,8 @@ export const MODELS = {
     label: 'GPT-5.1',
     input: 1.25, cachedInput: 0.125, output: 10,
     contextTokens: 400_000,
-    supportsEffort: false,
+    supportsEffort: true,
+    effortValues: ['none', 'low', 'medium', 'high'],
     supportsFallbacks: false,
     maxToolResultChars: 30_000,
   },
@@ -126,7 +141,8 @@ export const MODELS = {
     label: 'GPT-5',
     input: 1.25, cachedInput: 0.125, output: 10,
     contextTokens: 400_000,
-    supportsEffort: false,
+    supportsEffort: true,
+    effortValues: ['minimal', 'low', 'medium', 'high'],
     supportsFallbacks: false,
     maxToolResultChars: 30_000,
   },
@@ -135,7 +151,8 @@ export const MODELS = {
     label: 'GPT-5 mini',
     input: 0.25, cachedInput: 0.025, output: 2,
     contextTokens: 400_000,
-    supportsEffort: false,
+    supportsEffort: true,
+    effortValues: ['minimal', 'low', 'medium', 'high'],
     supportsFallbacks: false,
     maxToolResultChars: 12_000,
   },
@@ -144,7 +161,8 @@ export const MODELS = {
     label: 'GPT-5 nano',
     input: 0.05, cachedInput: 0.005, output: 0.4,
     contextTokens: 400_000,
-    supportsEffort: false,
+    supportsEffort: true,
+    effortValues: ['minimal', 'low', 'medium', 'high'],
     supportsFallbacks: false,
     maxToolResultChars: 12_000,
   },
@@ -214,4 +232,22 @@ export function estimateCost(info, usage) {
       (usage.cache_read_input_tokens || 0) * cachedRead +
       (usage.cache_creation_input_tokens || 0) * cacheWrite) / M
   );
+}
+
+/** Capabilities for the selected dialect; unknown endpoint aliases stay conservative. */
+export function effortValues(id, { kind } = {}) {
+  const info = modelInfo(id, { kind });
+  return info.supportsEffort && (!kind || kind === info.kind) ? [...(info.effortValues || [])] : [];
+}
+
+/** Empty/omitted means inherit the configured default, never disable reasoning. */
+export function resolveEffort(id, { kind, requested, configured = '' } = {}) {
+  const values = effortValues(id, { kind });
+  if (requested !== undefined && requested !== '') {
+    if (typeof requested !== 'string' || !values.includes(requested)) {
+      throw new Error('Choose an effort level supported by this model.');
+    }
+    return requested;
+  }
+  return values.includes(configured) ? configured : '';
 }

@@ -230,9 +230,9 @@ test('the save-time gate exercises /responses and the effort value the org typed
     assert.deepEqual(sent.body.reasoning, { effort: 'xhigh' });
     assert.equal(result.usage.input_tokens, 20);
 
-    // A model that does not take the dial never gets it, whatever is stored.
+    // Chat Completions models receive the equivalent reasoning_effort field.
     await smokeTestModel({ kind: 'openai', apiKey: 'sk-test', model: 'gpt-5.4', effort: 'high' });
-    assert.equal('reasoning_effort' in sent.body, false);
+    assert.equal(sent.body.reasoning_effort, 'high');
     assert.equal(sent.url, 'https://api.openai.com/v1/chat/completions');
 
     // The endpoint answers without calling the tool: the gate still refuses.

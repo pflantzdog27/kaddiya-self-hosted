@@ -32,8 +32,9 @@ deny-by-default, there is nothing to allow for it.
 
 ### Writes — the catalog, and nothing else
 
-Each of these is reachable only by a human clicking a button on a card that displayed the
-exact payload. The agent cannot invoke them.
+Normal mode requires a click on a card displaying the exact payload. Authorized task modes
+use the same commit validation and user token. Security-sensitive dynamic cards always require
+a typed manual approval.
 
 | # | API | Method | Tables | Triggered by |
 |---|---|---|---|---|
@@ -46,6 +47,7 @@ exact payload. The agent cannot invoke them.
 | 6 | `/api/now/table/{table}/{sys_id}` | PATCH | `sys_script`, `sys_script_include`, `sys_script_client`, `sys_ui_policy`, `sp_widget`, `sp_page`, `sp_container`, `sp_row`, `sp_column`, `sp_instance` | **Apply** on a proposed change to an existing record |
 | 7 | `/api/sn_sc/servicecatalog/items/{sys_id}/order_now` | POST | Service Catalog API; creates `sc_request` / `sc_req_item` as the signed-in user, quantity 1 | **Order** on a proposed order |
 | 8 | `/api/sn_chg_rest/change/normal`, `…/change/emergency`, `…/change/standard/{template}` | POST | Change Management API; creates one `change_request` | **Create** on a proposed change request |
+| 9 | `/api/now/table/{table}[/{sys_id}]` | POST / PATCH | Existing tables and inherited fields verified from live `sys_db_object` and `sys_dictionary`; includes `sc_cat_item`, `item_option_new`, and custom tables. Security-sensitive and unknown system tables require tier 3. No deletes or arbitrary REST paths. | **Create** / **Apply** on a dynamic record card (`POST /api/dynamic/apply`) |
 
 > **3a is easy to miss and will break the feature if you omit it.** Selecting a user's current
 > update set *is* a `sys_user_preference` write; ServiceNow has no other mechanism for it.
@@ -55,6 +57,13 @@ works at API / path / method / version / resource / **table** granularity. It ca
 "PATCH, but only the `comments` field". The restriction to journal fields is enforced in our
 endpoint (which rejects any other field name) and by your ACLs — not by the policy. If your
 control requirement is field-level, the honest answer is ACLs, not this policy.
+
+Dynamic cards require tier 2 and readable table metadata. Dedicated workflow paths remain
+required for change requests, approval records, update sets/preferences, and catalog request
+creation. Dynamic cards cannot write system-managed fields or secrets. Update cards re-read
+reviewed fields immediately before writing and reject a changed value; this is a preflight
+check, not an atomic database compare-and-swap. Table discovery does not prove write access:
+ServiceNow ACLs and business rules still decide whether the actual write succeeds.
 
 ## Option A — the read-only variant (strictest)
 
