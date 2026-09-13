@@ -13,6 +13,7 @@
 // than by hostname, because one instance can answer to many hostnames.
 
 import crypto from 'node:crypto';
+import { normalizeBranding } from './branding.js';
 import { withOrg, system } from './db.js';
 import { OrgContext, newWrappedDek } from './keys.js';
 
@@ -21,7 +22,7 @@ const DRAFT_TTL_DAYS = 14;
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('base64url');
 
-const ORG_PUBLIC_COLUMNS = `id, name, slug, region, edition, status, join_policy, deny_external, required_role,
+const ORG_PUBLIC_COLUMNS = `id, name, branding, slug, region, edition, status, join_policy, deny_external, required_role,
   actions_tiers, session_ttl_ms, runs_plan_mode, autonomous_mode, default_model_connection,
   COALESCE((SELECT jsonb_agg(c - 'key_enc') FROM jsonb_array_elements(orgs.model_connections) c), '[]'::jsonb) AS model_connections,
   model_provider, model_id, model_base_url, model_effort,
@@ -85,9 +86,10 @@ export async function createOrgDraft({ name, region = 'us', edition = 'saas' }) 
 }
 
 /** One workspace per self-hosted installation. The operator code is checked by the route. */
-export async function createSelfHostedDraft({ name }) {
+export async function createSelfHostedDraft({ name, branding }) {
   const clean = String(name || '').trim().slice(0, 80);
   if (!clean) throw new Error('A workspace name is required.');
+  const identity = branding === undefined ? null : JSON.stringify(normalizeBranding(branding));
   const draftSecret = crypto.randomBytes(32).toString('base64url');
   const id = await system(async c => {
     await c.query('BEGIN');
@@ -105,6 +107,7 @@ export async function createSelfHostedDraft({ name }) {
           VALUES ($1,$2,'us','self-hosted','draft',$3,$4,now()+interval '14 days','self-hosted')`,
         [orgId, clean, newWrappedDek(orgId), sha256(draftSecret)]);
       }
+      if (identity !== null) await c.query('UPDATE orgs SET branding=$2::jsonb, updated_at=now() WHERE id=$1', [orgId, identity]);
       await c.query('COMMIT');
       return orgId;
     } catch (err) { await c.query('ROLLBACK'); throw err; }
@@ -135,7 +138,7 @@ export async function orgForDraft(draftSecret) {
   return rows[0] || null;
 }
 
-const SETTABLE = new Set(['name', 'join_policy', 'deny_external', 'required_role', 'actions_tiers', 'session_ttl_ms', 'runs_plan_mode', 'autonomous_mode']);
+const SETTABLE = new Set(['name', 'branding', 'join_policy', 'deny_external', 'required_role', 'actions_tiers', 'session_ttl_ms', 'runs_plan_mode', 'autonomous_mode']);
 
 export async function updateOrgSettings(ctx, patch) {
   const sets = [];
@@ -143,6 +146,7 @@ export async function updateOrgSettings(ctx, patch) {
   for (const [key, raw] of Object.entries(patch || {})) {
     if (!SETTABLE.has(key)) continue;
     let value = raw;
+    if (key === 'branding') value = JSON.stringify(normalizeBranding(raw));
     if (key === 'name') value = String(raw || '').trim().slice(0, 80) || null;
     if (key === 'join_policy') value = raw === 'auto' ? 'auto' : 'approve';
     if (key === 'deny_external') value = raw !== false && raw !== 'false';

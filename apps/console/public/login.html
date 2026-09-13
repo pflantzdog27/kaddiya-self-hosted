@@ -14,9 +14,11 @@
 </head>
 <body class="login-body">
   <main class="login-col">
+    <div class="workspace-identity" data-workspace-identity hidden><img class="workspace-logo" data-workspace-logo alt="" hidden><span data-workspace-name></span></div>
     <span class="mark lg" aria-hidden="true"></span>
     <div class="login-wordmark">kaddiya</div>
     <div class="login-sub">You authenticate on your own instance.<br>Kaddiya only ever sees what you can.</div>
+    <p class="workspace-welcome" data-workspace-welcome hidden></p>
     <div id="notice" class="login-notice" hidden></div>
     <div id="self-hosted" class="login-fields" hidden>
       <div id="instance-field" class="instance-field" hidden>
@@ -33,6 +35,7 @@
     <div class="login-foot">OAuth 2.0 · your credentials never touch Kaddiya<br>reads and writes run as you · you choose the approval mode</div>
   </main>
   <div class="non-affiliation">Kaddiya is not affiliated with or endorsed by ServiceNow.</div>
+  <script src="/branding.js"></script>
   <script src="/login.js"></script>
 </body>
 </html>

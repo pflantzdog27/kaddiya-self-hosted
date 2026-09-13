@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 let existingInstance = null;
+const brandingEditor = KaddiyaBranding.editor(document.querySelector('[data-brand-editor]'), $('org-name'));
 // The local launcher passes its operator code without putting it in HTTP
 // requests, access logs or referrers. Remove it from browser history at once.
 const launchCode = new URLSearchParams(location.hash.slice(1)).get('setup');
@@ -23,6 +24,8 @@ async function api(path, body) {
   return data;
 }
 function showInstanceStep(draft) {
+  KaddiyaBranding.apply(draft.org);
+  brandingEditor.preview();
   $('step-org').hidden = true;
   $('step-instance').hidden = false;
   $('step-verify').hidden = false;
@@ -57,7 +60,7 @@ $('org-form').addEventListener('submit', async e => {
   const button = e.target.querySelector('button[type=submit]');
   button.disabled = true;
   try {
-    const draft = await api('/api/org', { name: $('org-name').value.trim(), setup_token: $('setup-code').value.trim() });
+    const draft = await api('/api/org', { name: $('org-name').value.trim(), branding: brandingEditor.changed() ? brandingEditor.value() : undefined, setup_token: $('setup-code').value.trim() });
     $('setup-code').value = '';
     showInstanceStep(draft);
     $('host').focus();

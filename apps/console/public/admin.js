@@ -8,6 +8,7 @@ let editingModelId = null;
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const brandingEditor = KaddiyaBranding.editor(document.querySelector('[data-brand-editor]'), $('brand-name'));
 const money = (n) => `$${Number(n || 0).toFixed(2)}`;
 const when = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
 
@@ -51,6 +52,9 @@ async function render() {
   renderInstances(instances);
   renderMembers(members);
   renderAccess(org);
+  KaddiyaBranding.apply(org);
+  $('brand-name').value = org.name;
+  brandingEditor.load(org.branding);
   renderModel();
   renderBilling();
   const setup = org.edition === 'self-hosted' && (params.has('setup') || !state.available_models?.length);
@@ -357,6 +361,23 @@ function renderAudit(rows) {
 }
 
 // ---- forms ----
+
+$('branding-form').addEventListener('submit', async e => {
+  e.preventDefault(); showError('');
+  const button = e.target.querySelector('button[type=submit]');
+  button.disabled = true; $('branding-saved').textContent = '';
+  try {
+    const { org } = await api('/api/admin/settings', { name: $('brand-name').value.trim(), branding: brandingEditor.value() });
+    state.org = org;
+    KaddiyaBranding.apply(org);
+    $('org-name').textContent = org.name;
+    $('a-name').value = org.name;
+    brandingEditor.load(org.branding);
+    $('branding-saved').textContent = 'Branding saved.';
+  } catch (err) { showError(err.message); }
+  finally { button.disabled = false; }
+});
+
 
 $('instance-form').addEventListener('submit', async (e) => {
   e.preventDefault();

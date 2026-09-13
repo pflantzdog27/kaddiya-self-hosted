@@ -35,7 +35,8 @@ The browser opens **[http://localhost:3000](http://localhost:3000)** with the se
 filled in. If it does not open automatically, open that address and paste the code from the
 terminal. This workspace is available only on your computer. The guide walks you through:
 
-1. **Name your workspace.** The setup code proves you control this installation.
+1. **Name your workspace.** The setup code proves you control this installation. Expand
+   **Organization branding** to optionally add a logo, accent color, and welcome message.
 2. **Connect ServiceNow.** Create the one OAuth record using the exact redirect URL shown,
    paste its client ID and secret, then sign in as an administrator to verify the connection.
 3. **Add your models.** Enter a connection name, provider, model ID, and API key. Kaddiya tests
@@ -43,6 +44,27 @@ terminal. This workspace is available only on your computer. The guide walks you
 
 After setup, open the workspace and try **“Show my open incidents.”** Other people signing
 in must be approved by a workspace administrator before they can join.
+
+## Make it your team's workspace
+
+Optional **Organization branding** in the first setup step lets an admin add a logo,
+accent color, and a short welcome message with a live preview. Your workspace name and
+logo appear alongside Kaddiya on sign-in, membership approval, the workspace, and Admin.
+The welcome message appears on sign-in and new conversations. Accent colors personalize
+navigation without changing success, warning, or approval indicators; button text adjusts
+for contrast. Light and dark themes remain available.
+
+Use **Admin → Workspace branding** to update the identity later. **Remove logo** removes
+just the image; **Reset to Kaddiya defaults**, followed by **Save branding**, clears the
+logo, accent, and welcome message while keeping your workspace name.
+
+Choose a PNG, JPEG, or WebP logo under 2 MB. The browser resizes it to at most 512 pixels
+and stores a PNG up to 256 KB in your workspace database. Logos are never fetched from
+third-party URLs. Your workspace name, logo, accent, and welcome message are visible
+before sign-in, so use public-facing identity text. Only owners and admins can save changes.
+Branding is included in your normal local data backup and survives updates and restarts.
+
+For tomorrow's walkthrough, see the [local demo guide](docs/local-demo.md).
 
 ## Choose and switch models
 

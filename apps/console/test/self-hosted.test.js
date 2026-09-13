@@ -17,7 +17,7 @@ test('a fresh self-hosted workspace resumes securely and runs only its own model
   }
   process.env.KADDIYA_TRIAL_ANTHROPIC_KEY = 'platform-key-must-not-be-used';
   assert.equal(await tenancy.selfHostedDeployment(), null);
-  const draft = await tenancy.createSelfHostedDraft({ name: 'Example enterprise' });
+  const draft = await tenancy.createSelfHostedDraft({ name: 'Example enterprise', branding: { accent: '#2244aa', welcome: 'Our workspace' } });
   const ctx = tenancy.contextFor(draft.org);
   assert.equal(draft.org.edition, 'self-hosted');
   assert.equal((await tenancy.orgForDraft(draft.draftSecret)).id, draft.org.id);
@@ -29,6 +29,7 @@ test('a fresh self-hosted workspace resumes securely and runs only its own model
   });
   const recovered = await tenancy.createSelfHostedDraft({ name: 'Example enterprise' });
   assert.equal(recovered.org.id, draft.org.id);
+  assert.deepEqual(recovered.org.branding, draft.org.branding, 'recovery without branding preserves the saved identity');
   assert.equal(await tenancy.orgForDraft(draft.draftSecret), null, 'a resumed setup invalidates the previous draft binding');
   assert.equal((await tenancy.listInstances(ctx))[0].id, instance.id, 'recovery preserves the instance');
   const attempts = await Promise.all([1, 2, 3].map(() => tenancy.createSelfHostedDraft({ name: 'Example enterprise' })));
@@ -117,7 +118,7 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   assert.equal((await post('/api/org', { name: 'HTTP enterprise' })).status, 403);
   assert.equal((await post('/api/org', { name: 'HTTP enterprise', setup_token: 'wrong' })).status, 403);
   assert.equal((await post('/api/org', { name: 'HTTP enterprise', setup_token: 'operator-test-code' }, null, 'https://foreign.example')).status, 403);
-  const response = await post('/api/org', { name: 'HTTP enterprise', setup_token: 'operator-test-code', edition: 'saas' });
+  const response = await post('/api/org', { name: 'HTTP enterprise', setup_token: 'operator-test-code', edition: 'saas', branding: { accent: '#123456', welcome: 'Welcome team' } });
   assert.equal(response.status, 200);
   const draft = await response.json();
   assert.equal(draft.org.edition, 'self-hosted', 'edition is controlled by the deployment, not the submitted body');
@@ -129,6 +130,7 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   await stop(); await boot();
   const resumed = await (await fetch(base + '/api/org/draft', { headers: { Cookie: cookie } })).json();
   assert.equal(resumed.instances[0].id, instance.id);
+  assert.deepEqual(resumed.org.branding, draft.org.branding, 'branding survives a restart');
   assert.equal(resumed.callback_url, base + '/auth/callback');
   await stop();
   const org = await tenancy.getOrg(draft.org.id);
@@ -139,12 +141,29 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   const sid = await createSession({ orgId: org.id, instanceId: instance.id, memberId: member.id, userSysId: user.sys_id, user,
     tokens: { accessToken: 'fake-test-token', refreshToken: 'fake-test-refresh', expiresAt: Date.now() + 3600000 }, ttlMs: 3600000 });
   const auth = { Cookie: `sid=${sid}` };
+  const regular = await tenancy.signinMember(ctx, { org: await tenancy.getOrg(org.id), instance, user: { sys_id: 'regular-user', user_name: 'regular' }, sn: fakeSn() });
+  await tenancy.setMember(ctx, regular.id, { status: 'active', actor: 'http.admin' });
+  const memberSid = await createSession({ orgId: org.id, instanceId: instance.id, memberId: regular.id, userSysId: 'regular-user', user: { sys_id: 'regular-user' },
+    tokens: { accessToken: 'fake-member-token', refreshToken: 'fake-member-refresh', expiresAt: Date.now() + 3600000 }, ttlMs: 3600000 });
   await close(); await boot();
   assert.equal((await fetch(base, { headers: auth, redirect: 'manual' })).headers.get('location'), '/admin?setup=1');
   assert.equal((await fetch(base, { redirect: 'manual' })).headers.get('location'), '/signin');
   assert.equal((await post('/api/org', { name: 'Second workspace', setup_token: 'operator-test-code' })).status, 400);
   const admin = await (await fetch(base + '/api/admin', { headers: auth })).json();
   assert.equal(admin.plan.id, 'self-hosted');
+  const brandPatch = { branding: { accent: '#abcdef', welcome: 'Team workspace' } };
+  assert.equal((await post('/api/admin/settings', brandPatch)).status, 401);
+  assert.equal((await post('/api/admin/settings', brandPatch, `sid=${memberSid}`)).status, 403);
+  assert.equal((await post('/api/admin/settings', brandPatch, `sid=${sid}`, 'https://foreign.example')).status, 403);
+  assert.equal((await post('/api/admin/settings', { branding: { logo: 'https://foreign.example/logo.svg' } }, `sid=${sid}`)).status, 400);
+  assert.equal((await post('/api/admin/settings', brandPatch, `sid=${sid}`)).status, 200);
+  const config = await (await fetch(base + '/api/config')).json();
+  assert.deepEqual(config.workspace, { name: 'HTTP enterprise', ...brandPatch });
+  assert.deepEqual(Object.keys(config.workspace).sort(), ['branding', 'name']);
+  await stop(); await boot();
+  assert.deepEqual((await (await fetch(base + '/api/config')).json()).workspace.branding, brandPatch.branding);
+  assert.equal((await post('/api/admin/settings', { branding: {} }, `sid=${sid}`)).status, 200);
+  assert.deepEqual((await (await fetch(base + '/api/config')).json()).workspace.branding, {});
   assert.deepEqual(admin.available_models, []);
   const invalid = await post('/api/admin/models', { label: 'No key', provider: 'openai', model_id: 'custom' }, `sid=${sid}`);
   assert.equal(invalid.status, 400);

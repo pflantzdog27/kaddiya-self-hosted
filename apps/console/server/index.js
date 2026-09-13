@@ -1,4 +1,5 @@
 import './env.js'; // must stay first — populates process.env before other modules load
+import { publicIdentity } from './branding.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -391,7 +392,7 @@ app.post('/api/org', async (req, res) => {
       crypto.createHash('sha256').update(expected).digest(),
       crypto.createHash('sha256').update(supplied).digest(),
     )) return res.status(403).json({ error: 'Enter the setup code printed by npm run setup. For a manual installation, use KADDIYA_SETUP_TOKEN.' });
-    const { org, draftSecret } = await tenancy.createSelfHostedDraft({ name: req.body?.name });
+    const { org, draftSecret } = await tenancy.createSelfHostedDraft({ name: req.body?.name, branding: req.body?.branding });
     res.setHeader('Set-Cookie', `${DRAFT_COOKIE}=${draftSecret}; ${cookieAttrs(DRAFT_COOKIE_TTL_S)}`);
     res.json({ org: tenancy.publicOrg(org), instances: await tenancy.listInstances(tenancy.contextFor(org)), callback_url: cfg.callbackUrl });
   } catch (err) {
@@ -427,7 +428,9 @@ app.post('/api/org/draft/instance', async (req, res) => {
 // Public, unauthenticated: the login page needs to know which shape this is.
 app.get('/api/config', async (req, res) => {
   const deployment = await tenancy.selfHostedDeployment();
+  res.setHeader('Cache-Control', 'no-store');
   res.json({
+    workspace: publicIdentity(deployment?.org),
     mode: 'self-hosted',
     instance_host: deployment?.instance.host || null,
     setup_required: !deployment,
