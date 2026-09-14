@@ -716,12 +716,24 @@ a:hover { color: var(--green-hover); }
   align-items: flex-end;
   padding: 12px 16px;
   gap: 12px;
-  /* One line of the textarea (font-size 14px x line-height 1.5). The controls
-     beside it are this tall and centre their glyphs, so bottom-aligning the
-     row puts every glyph on the text's last line. Vertical padding instead of
-     a height lifts a glyph above the words it belongs to, which is what the
-     attach button used to do. */
+  /* One line of the textarea (font-size 14px x line-height 1.5), and the box
+     the controls beside it occupy. The control is the taller of the two so it
+     stays comfortable to hit; `.composer-control` below centres it on the
+     line. Vertical padding instead of a height lifts a glyph above the words
+     it belongs to, which is what the attach button used to do. */
   --composer-line: 21px;
+  --composer-control: 24px;
+}
+/* Bottom-aligning the row lands a control's bottom edge on the text's, so a
+   control taller than the line box rides above it. Pull it down by half the
+   difference and its centre sits on the last line, whatever either value is. */
+.attach,
+.next-hint,
+.composer button[type='submit'] {
+  display: flex;
+  align-items: center;
+  height: var(--composer-control);
+  margin-bottom: calc((var(--composer-line) - var(--composer-control)) / 2);
 }
 .composer form:focus-within { border-color: var(--border-pending); }
 .composer textarea {
@@ -737,15 +749,10 @@ a:hover { color: var(--green-hover); }
   padding: 0;
 }
 .composer textarea::placeholder { color: var(--faint); }
-.next-hint {
-  display: flex; align-items: center; height: var(--composer-line);
-  font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap;
-}
+.next-hint { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
 .next-hint kbd { font-family: inherit; border: 1px solid var(--border-card-2); border-radius: 4px; padding: 1px 5px; }
 .composer button[type='submit'] {
-  display: flex;
-  align-items: center;
-  height: var(--composer-line);
+  position: relative;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--faint);
@@ -753,6 +760,14 @@ a:hover { color: var(--green-hover); }
   border: none;
   cursor: pointer;
   padding: 0;
+}
+/* The arrow is barely 7px wide, so the button's own box is a poor target.
+   Widen the target, not the layout: a wider box here would push the Tab hint
+   left by the same amount and open a gap beside the arrow. */
+.composer button[type='submit']::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 50%;
+  width: var(--composer-control); transform: translateX(-50%);
 }
 .composer button[type='submit']:hover { color: var(--text); }
 .composer button[disabled] { opacity: 0.5; cursor: default; }
@@ -1087,7 +1102,7 @@ body.page-body .non-affiliation { position: static; padding: 36px 0 32px; }
 }
 .new-chat.run { margin-top: 6px; }
 .attach {
-  align-self: flex-end; display: flex; align-items: center; height: var(--composer-line);
+  align-self: flex-end; justify-content: center;
   font-size: 18px; line-height: 1; color: var(--faint); background: none; border: none;
   padding: 0 4px 0 10px; cursor: pointer;
 }
