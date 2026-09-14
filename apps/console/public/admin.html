@@ -62,7 +62,8 @@
           <label class="mono-label" for="m-key">API key <span class="opt" id="m-key-hint"></span></label>
           <input id="m-key" class="text-input mono" type="password" autocomplete="new-password" required>
           <label class="mono-label" for="m-effort">Reasoning effort <span class="opt">optional</span></label>
-          <select id="m-effort" class="text-input"><option value="">Provider default</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select>
+          <select id="m-effort" class="text-input"><option value="">Provider default</option></select>
+          <p class="form-hint" id="m-effort-note"></p>
           <p class="form-hint">We test streaming and tool use before saving. Keys are encrypted and never displayed. Model quality varies; try a read-only question before trusting a new model with changes.</p>
           <div class="form-row"><button class="btn-primary" type="submit" id="model-save">Test and add model</button><button class="btn-ghost" id="model-cancel" type="button">Cancel</button><span class="form-row-note" id="model-result" role="status"></span></div>
         </form>

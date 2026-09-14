@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { effortValues, resolveEffort } from '../server/models.js';
+import { effortValues, modelCatalog, resolveEffort } from '../server/models.js';
 import { availableModels } from '../server/billing.js';
 import { smokeTestModel } from '../server/agent.js';
 
@@ -37,6 +37,20 @@ test('public model choices carry per-connection defaults without exposing secret
     assert.equal(choices.find(m => m.id === 'a').default_effort, 'low');
     assert.doesNotMatch(JSON.stringify(choices), /secret|key_enc/);
   }
+});
+
+test('the catalog offers the admin editor exactly what each model accepts', () => {
+  const catalog = modelCatalog();
+  const byId = (id) => catalog.find((model) => model.id === id);
+  assert.deepEqual(byId('gpt-5-nano').effort_values, ['minimal', 'low', 'medium', 'high']);
+  assert.equal(byId('gpt-5-nano').kind, 'openai');
+  assert.deepEqual(byId('claude-haiku-4-5').effort_values, [], 'a model without the dial offers nothing to pick');
+  assert.equal(byId('enterprise-alias'), undefined, 'an id off the registry is absent, not guessed');
+  for (const entry of catalog) {
+    assert.deepEqual(entry.effort_values, effortValues(entry.id, { kind: entry.kind }));
+    assert.equal(typeof entry.label, 'string');
+  }
+  assert.doesNotMatch(JSON.stringify(catalog), /input|output|maxToolResultChars/);
 });
 
 test('save-time validation refuses unsupported effort before contacting a provider', async () => {

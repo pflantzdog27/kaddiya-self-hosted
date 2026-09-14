@@ -168,6 +168,13 @@ test('HTTP setup requires the operator code, survives restart, and unlocks model
   const invalid = await post('/api/admin/models', { label: 'No key', provider: 'openai', model_id: 'custom' }, `sid=${sid}`);
   assert.equal(invalid.status, 400);
   assert.match((await invalid.json()).error, /API key/, 'self-hosted connections reach validation without a payment gate');
+  assert.ok(admin.model_catalog.some(m => m.id === 'gpt-5-nano'), 'the editor is served the effort values it must offer');
+  const badEffort = await post('/api/admin/models',
+    { label: 'Too much effort', provider: 'anthropic', model_id: 'claude-haiku-4-5', effort: 'high', api_key: 'effort-test-key' }, `sid=${sid}`);
+  assert.equal(badEffort.status, 400);
+  const badEffortBody = await badEffort.json();
+  assert.match(badEffortBody.error, /effort level supported by this model/, 'the save-time catch keeps the reason, not just "test failed"');
+  assert.doesNotMatch(badEffortBody.error, /effort-test-key/, 'and still strips the key');
   await stop();
   const configured = await tenancy.saveModelConnection(ctx, { label: 'Enterprise model', provider: 'openai', model_id: 'custom' }, 'test-key');
   const choice = configured.model_connections[0].id;

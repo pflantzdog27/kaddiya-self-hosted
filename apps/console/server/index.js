@@ -8,7 +8,7 @@ import { SnClient, exchangeCode, revokeToken, ARTIFACT_TABLES } from './sn.js';
 import { TASK_TABLES, TASK_FIELDS, CHANGE_TYPES, CHANGE_FIELDS, actionById, enabledActions } from './actions.js';
 import { keepNote, discardNote } from './notebook.js';
 import { runAgentTurn, smokeTestModel } from './agent.js';
-import { modelInfo, resolveEffort } from './models.js';
+import { modelCatalog, modelInfo, resolveEffort } from './models.js';
 import { warmDocs, defaultFamily } from './docs.js';
 import { migrate, close as closeDatabase, localStorage } from './db.js';
 import * as store from './store.js';
@@ -1012,6 +1012,7 @@ app.get('/api/admin', async (req, res) => {
       plans: billing.PLANS,
       usage,
       model_connections: session.org.model_connections || [],
+      model_catalog: modelCatalog(),
       available_models: billing.availableModels(session.org),
       default_model: billing.availableModels(session.org)[0]?.id || null,
       model: {
@@ -1142,7 +1143,10 @@ app.post('/api/admin/models', async (req, res) => {
       const key = api_key || (existing ? await tenancy.modelConnectionKey(session.ctx, id) : null);
       if (!key || typeof key !== 'string' || key.length > 8192) throw new Error('Enter an API key for this connection.');
       try { await smokeTestModel({ kind: clean.provider === 'openai' ? 'openai' : 'anthropic', apiKey: key, baseUrl: clean.base_url || undefined, model: clean.model_id, effort: clean.effort }); }
-      catch { throw new Error('The model connection test failed. Check the endpoint, model ID and API key.'); }
+      // Keep the endpoint's own words: a rejected effort value and a bad key
+      // are different problems, and the generic sentence named neither. The
+      // catch below strips the API key before any of this reaches the admin.
+      catch (err) { throw new Error(`The model connection test failed: ${err.message}`); }
       org = await tenancy.saveModelConnection(session.ctx, clean, key, id);
     } else throw new Error('Unknown model action.');
     await auditFor(session, { action: 'model_connection_' + operation, connection: id || null, approved_by_user: true });

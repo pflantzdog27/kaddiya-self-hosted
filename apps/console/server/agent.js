@@ -65,10 +65,14 @@ export function clientFor(model = {}) {
  */
 export async function smokeTestModel(model) {
   const effort = resolveEffort(model.model, { kind: model.kind, requested: model.effort });
+  const info = modelInfo(model.model, { kind: model.kind });
   const stream = clientFor(model).stream({
     model: model.model,
     // Reasoning tokens share the output budget; leave room for the tool call.
-    max_tokens: modelInfo(model.model).supportsEffort ? 4096 : 64,
+    // Only a model the registry positively knows has no reasoning gets the
+    // small budget. An unrecognised id may well be a reasoning model, and 64
+    // tokens would be spent thinking before it ever reached the call.
+    max_tokens: info.known && !info.supportsEffort ? 64 : 4096,
     // The effort dial goes through the smoke test as well: a value this
     // model rejects fails validation here before the org's first turn.
     ...(effort ? { output_config: { effort } } : {}),

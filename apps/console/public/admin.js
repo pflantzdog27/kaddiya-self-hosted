@@ -296,15 +296,46 @@ function editModel(connection) {
   $('m-provider').value = connection?.provider || 'anthropic';
   $('m-base-url').value = connection?.base_url || '';
   $('m-model').value = connection?.model_id || '';
-  $('m-effort').value = connection?.effort || '';
   $('m-key').value = '';
   $('model-result').textContent = '';
   $('model-editor').open = true;
-  syncModelFields();
+  // The stored effort is passed in, not assigned: the options are rebuilt for
+  // this model below, and an assignment made before that is silently dropped.
+  syncModelFields(connection?.effort || '');
   $('m-label').focus();
 }
 
-function syncModelFields() {
+/**
+ * Offer only the effort values this model accepts. The server rejects the
+ * rest at save time, and used to do it behind a message about the endpoint
+ * and the API key — so a static list made cheap models look misconfigured.
+ */
+function syncEffortField(desired = $('m-effort').value) {
+  const select = $('m-effort');
+  const modelId = $('m-model').value.trim();
+  const kind = $('m-provider').value === 'openai' ? 'openai' : 'anthropic';
+  const entry = (state?.model_catalog || []).find((m) => m.id === modelId && m.kind === kind);
+  const values = entry ? entry.effort_values : [];
+
+  select.replaceChildren();
+  const provided = document.createElement('option');
+  provided.value = ''; provided.textContent = 'Provider default';
+  select.append(provided);
+  for (const value of values) {
+    const option = document.createElement('option');
+    option.value = value; option.textContent = value;
+    select.append(option);
+  }
+  select.value = values.includes(desired) ? desired : '';
+  select.disabled = !values.length;
+
+  $('m-effort-note').textContent = !modelId ? ''
+    : !entry ? `${modelId} is not in Kaddiya's registry. It can still be saved, without an effort dial or a cost estimate.`
+      : values.length ? ''
+        : `${modelId} does not take a reasoning effort — leave this on the provider default.`;
+}
+
+function syncModelFields(desiredEffort) {
   const provider = $('m-provider').value;
   const hasUrl = provider !== 'anthropic';
   $('m-base-url').hidden = !hasUrl;
@@ -316,8 +347,12 @@ function syncModelFields() {
   $('m-key').required = !editingModelId;
   $('m-key-hint').textContent = editingModelId ? 'Leave blank to keep it; re-enter if changing endpoints.' : '';
   $('model-save').textContent = editingModelId ? 'Test and save changes' : 'Test and add model';
+  syncEffortField(desiredEffort);
 }
-$('m-provider').addEventListener('change', syncModelFields);
+// Wrapped, not passed directly: a listener's first argument is the Event,
+// which would arrive here as the effort to preselect.
+$('m-provider').addEventListener('change', () => syncModelFields());
+$('m-model').addEventListener('input', () => syncEffortField());
 $('model-cancel').addEventListener('click', () => { editingModelId = null; $('model-form').reset(); $('model-editor').open = false; syncModelFields(); });
 $('model-default').addEventListener('change', async () => {
   try { await api('/api/admin/models', { operation: 'default', id: $('model-default').value }); await load(); }

@@ -216,6 +216,21 @@ export function modelsOfKind(kind) {
     .map(([id, m]) => ({ id, ...m }));
 }
 
+/**
+ * Capabilities the admin model editor needs to offer only the effort values a
+ * model accepts. Ids the registry does not carry are absent on purpose: the
+ * editor treats a missing id as "provider default only", which is what
+ * `modelInfo` falls back to anyway.
+ */
+export function modelCatalog() {
+  return ['anthropic', 'openai'].flatMap((kind) => modelsOfKind(kind).map((model) => ({
+    id: model.id,
+    label: model.label,
+    kind,
+    effort_values: [...(model.effortValues || [])],
+  })));
+}
+
 /** Rough USD estimate for one turn. Returns null when pricing is unknown. */
 export function estimateCost(info, usage) {
   if (info.input == null) return null;
