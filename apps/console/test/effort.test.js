@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 import { effortValues, modelCatalog, resolveEffort } from '../server/models.js';
 import { availableModels } from '../server/billing.js';
-import { smokeTestModel } from '../server/agent.js';
+import { describeFailure, smokeTestModel } from '../server/agent.js';
 
 test('effort capabilities distinguish models, dialects and provider defaults', () => {
   assert.deepEqual(effortValues('gpt-5.4'), ['none', 'low', 'medium', 'high', 'xhigh']);
@@ -56,4 +57,39 @@ test('the catalog offers the admin editor exactly what each model accepts', () =
 test('save-time validation refuses unsupported effort before contacting a provider', async () => {
   await assert.rejects(smokeTestModel({ kind: 'openai', model: 'gpt-6-astra', effort: 'none' }), /supported/);
   await assert.rejects(smokeTestModel({ kind: 'anthropic', model: 'claude-haiku-4-5', effort: 'high' }), /supported/);
+});
+
+test('a request that never left the network says why, not "Connection error."', async () => {
+  // Two links down is the shape undici produces: the SDK wraps `fetch failed`,
+  // which wraps the socket error an operator can actually act on.
+  const intercepted = new Error('Connection error.');
+  intercepted.cause = Object.assign(new TypeError('fetch failed'), {
+    cause: Object.assign(new Error('self-signed certificate in certificate chain'), { code: 'SELF_SIGNED_CERT_IN_CHAIN' }),
+  });
+  const described = describeFailure(intercepted);
+  assert.match(described, /Connection error/);
+  assert.match(described, /self-signed certificate in certificate chain \(SELF_SIGNED_CERT_IN_CHAIN\)/);
+
+  assert.equal(describeFailure(new Error('401 API key is invalid.')), '401 API key is invalid.',
+    'an answer from the endpoint is already the endpoint\'s own words');
+  const repeated = new Error('fetch failed');
+  repeated.cause = new Error('fetch failed');
+  assert.equal(describeFailure(repeated), 'fetch failed', 'a repeated link is not restated');
+
+  // A port that was just released refuses immediately: a real connection
+  // failure, with no network and no chance of something answering on it.
+  // (Low ports are no good here — undici refuses those as "bad port" before
+  // it ever opens a socket.)
+  const freed = await new Promise((resolve) => {
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+  await assert.rejects(
+    smokeTestModel({ kind: 'anthropic', model: 'claude-haiku-4-5', apiKey: 'unused-by-a-refused-socket', baseUrl: `https://127.0.0.1:${freed}` }),
+    /ECONNREFUSED/,
+    'the socket error reaches the admin instead of being flattened',
+  );
 });

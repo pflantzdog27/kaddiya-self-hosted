@@ -58,6 +58,23 @@ export function clientFor(model = {}) {
 }
 
 /**
+ * A request that never reached the endpoint arrives as "Connection error." —
+ * the SDK keeps the reason (DNS, a refused port, a proxy, an intercepted TLS
+ * chain) on `cause`, one or two links down, because undici wraps its own
+ * failures in a bare `fetch failed`. An admin can act on "self-signed
+ * certificate in certificate chain"; nobody can act on "Connection error."
+ */
+export function describeFailure(err) {
+  const parts = [String(err.message || err)];
+  for (let cause = err.cause, depth = 0; cause && depth < 3; cause = cause.cause, depth++) {
+    const message = String(cause.message || '');
+    const detail = cause.code && !message.includes(cause.code) ? `${message} (${cause.code})` : message;
+    if (detail && !parts.some((part) => part.includes(detail))) parts.push(detail);
+  }
+  return parts.join(' — ');
+}
+
+/**
  * The save-time check ADR 0008 D9 requires before a provider config may be
  * stored: one streamed tool-call round trip against the configured endpoint,
  * through whichever adapter the config selects. Throws with the endpoint's
@@ -84,7 +101,9 @@ export async function smokeTestModel(model) {
     tool_choice: { type: 'tool', name: 'ping' },
     messages: [{ role: 'user', content: 'Call the ping tool with ok=true.' }],
   });
-  const message = await stream.finalMessage();
+  let message;
+  try { message = await stream.finalMessage(); }
+  catch (err) { throw new Error(describeFailure(err)); }
   const call = message.content.find((b) => b.type === 'tool_use');
   if (!call) throw new Error('the endpoint answered, but without a tool call — tool use is required');
   return { model: message.model, usage: message.usage };
