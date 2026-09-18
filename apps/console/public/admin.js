@@ -52,6 +52,7 @@ async function render() {
   renderInstances(instances);
   renderMembers(members);
   renderAccess(org);
+  renderMcp(org, state.mcp_tokens || [], instances);
   KaddiyaBranding.apply(org);
   $('brand-name').value = org.name;
   brandingEditor.load(org.branding);
@@ -60,7 +61,7 @@ async function render() {
   const setup = org.edition === 'self-hosted' && (params.has('setup') || !state.available_models?.length);
   $('setup-summary').hidden = !setup;
   document.querySelector('main').classList.toggle('wide', !setup);
-  for (const id of ['stats', 'sec-instances', 'sec-members', 'sec-access', 'sec-billing', 'sec-audit']) $(id).hidden = setup;
+  for (const id of ['stats', 'sec-instances', 'sec-members', 'sec-access', 'sec-mcp', 'sec-billing', 'sec-audit']) $(id).hidden = setup;
   if (setup) {
     const ready = !!state.available_models?.length;
     $('admin-lede').textContent = ready ? 'Your workspace is ready. Add another model or start your first conversation.' : 'ServiceNow is connected. Add your first model to finish setup.';
@@ -240,8 +241,10 @@ function renderAccess(org) {
   $('a-deny-external').checked = org.deny_external !== false;
   $('a-runs-plan').checked = org.runs_plan_mode === true;
   $('a-autonomous').checked = org.autonomous_mode === true;
+  $('a-mcp').checked = org.mcp_enabled === true;
   $('a-required-role').value = org.required_role || '';
   $('a-session').value = org.session_ttl_ms ? String(org.session_ttl_ms) : '';
+  $('a-mcp-ttl').value = org.mcp_token_ttl_ms ? String(org.mcp_token_ttl_ms) : '';
   const tiers = $('tiers');
   tiers.innerHTML = '';
   const enabled = new Set(String(org.actions_tiers || '1,2').split(','));
@@ -380,6 +383,51 @@ async function loadAudit(reset = false) {
 $('audit-prev').addEventListener('click', async () => { if (auditCursors.length > 1) { auditCursors.pop(); try { await loadAudit(); } catch (err) { showError(err.message); } } });
 $('audit-next').addEventListener('click', async () => { if (auditNext) { auditCursors.push(auditNext); try { await loadAudit(); } catch (err) { showError(err.message); } } });
 
+// MCP tokens (ADR 0014): metadata only. No bearer reaches this page — the
+// reveal is sealed under the minting browser's own cookie, so an admin can
+// revoke a token but never use one.
+function renderMcp(org, tokens, instances) {
+  const live = tokens.filter((t) => !t.revoked);
+  $('mcp-note').textContent = org.mcp_enabled
+    ? (live.length ? `${live.length} live` : 'none connected')
+    : 'turned off';
+
+  // The instance's own refresh-token lifespan caps every token minted against
+  // it (ADR 0014 D2), and it is only re-read at verification — so say both.
+  const clamped = instances.filter((i) => i.status === 'verified' && i.refresh_token_lifespan_s > 0);
+  const tightest = clamped.sort((a, b) => a.refresh_token_lifespan_s - b.refresh_token_lifespan_s)[0];
+  $('a-mcp-lifespan').textContent = tightest
+    ? `An absolute cap from the moment the token is minted. Downward only. ${tightest.host} has an OAuth refresh-token lifespan of ${Math.round(tightest.refresh_token_lifespan_s / 3600)} hours, which caps every token minted against it no matter what is chosen here — raise it on the instance and re-verify to lift the cap.`
+    : 'An absolute cap from the moment the token is minted. Downward only.';
+
+  const rows = tokens.map((t) => {
+    const tr = document.createElement('tr');
+    if (t.revoked) tr.className = 'is-pending';
+    tr.append(
+      cell(t.user_name, 'mono'),
+      cell(t.label),
+      cell(`${t.prefix}…`, 'mono'),
+      cell(when(t.created_at), 'mono'),
+      cell(t.last_used_at ? when(t.last_used_at) : 'never', 'mono'),
+      cell(when(t.expires_at), 'mono'),
+    );
+    const actions = document.createElement('td');
+    actions.className = 'actions';
+    if (t.revoked) actions.appendChild(cellText('revoked on next call'));
+    else actions.appendChild(button('Revoke', 'btn-ghost', () => api(`/api/mcp/tokens/${t.id}/revoke`, {})));
+    tr.appendChild(actions);
+    return tr;
+  });
+  table('mcp-table', ['Member', 'Label', 'Token', 'Created', 'Last used', 'Expires', ''], rows);
+}
+
+function cellText(text) {
+  const span = document.createElement('span');
+  span.className = 'reason';
+  span.textContent = text;
+  return span;
+}
+
 function renderAudit(rows) {
   table('audit-table', ['When', 'User', 'Action', 'Table', 'Record', 'Approved'], rows.map((r) => {
     const tr = document.createElement('tr');
@@ -444,6 +492,8 @@ $('access-form').addEventListener('submit', async (e) => {
       required_role: $('a-required-role').value,
       actions_tiers: [...document.querySelectorAll('input[name=tier]:checked')].map((b) => b.value).join(','),
       session_ttl_ms: $('a-session').value || null,
+      mcp_enabled: $('a-mcp').checked,
+      mcp_token_ttl_ms: $('a-mcp-ttl').value || null,
     });
     $('access-saved').textContent = 'Saved.';
     await load();

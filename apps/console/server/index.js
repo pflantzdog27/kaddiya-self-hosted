@@ -14,9 +14,11 @@ import { migrate, close as closeDatabase, localStorage } from './db.js';
 import * as store from './store.js';
 import * as tenancy from './tenancy.js';
 import * as sessions from './sessions.js';
+import * as mcp from './mcp.js';
 import * as billing from './billing.js';
 import { audit, listAudit } from './audit.js';
 import { commit, CommitError } from './commits.js';
+import { buildUpdateSetPackage, packageResponse, PackageError } from './update-set-package.js';
 import * as runs from './runs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -99,8 +101,6 @@ setInterval(() => sessions.purgeExpired().catch(() => {}), 60_000).unref();
 
 const app = express();
 
-app.use(express.json({ limit: '1mb' }));  // attachments on /api/chat ride in the body (capped there)
-
 // Strict CSP + the usual hardening (ADR 0008 D8). No inline script or style
 // anywhere in public/ — that is what makes `'self'` sufficient, and it is
 // enforced by keeping every script and stylesheet in its own file. Google
@@ -125,6 +125,25 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// ---- MCP (ADR 0014 D4) ----
+//
+// Mounted here on purpose: *before* express.json(), so the SDK's adapter reads
+// the raw body itself, and outside /api/, so the cookie-oriented CSRF check
+// below never runs against a surface that has no cookie to protect. The bearer
+// is the only credential /mcp accepts; it validates Origin itself. Every
+// method reachable through this one route is a read — tools/call dispatches
+// only through mcp.MCP_TOOLS, which write-paths.test.js pins as a subset of
+// the read tools.
+app.post('/mcp', mcp.handler(cfg));
+// The 2025-era standalone stream and session teardown. We mint no session id,
+// so there is nothing to open or to terminate.
+app.get('/mcp', (req, res) => {
+  res.setHeader('Allow', 'POST');
+  res.status(405).json({ error: 'POST only: this endpoint is stateless and opens no stream' });
+});
+
+app.use(express.json({ limit: '1mb' }));  // attachments on /api/chat ride in the body (capped there)
 
 // CSRF (ADR 0008 D8): every state-changing API call must come from this
 // origin. Browsers send Origin on cross-site POSTs, so a foreign page cannot
@@ -240,12 +259,12 @@ async function snFor(session) {
  * started it, so a pasted or emailed callback URL cannot land a session on
  * someone else's console (ADR 0008 D2 — this closes login-CSRF too).
  */
-async function beginOAuth(res, { org, ctx, instanceId, purpose }) {
+async function beginOAuth(res, { org, ctx, instanceId, purpose, meta }) {
   const instanceCfg = await tenancy.instanceConfig(ctx, instanceId, cfg.baseUrl);
   if (!instanceCfg) throw new Error('unknown instance');
   const verifier = crypto.randomBytes(32).toString('base64url');
   const binding = crypto.randomBytes(32).toString('base64url');
-  const state = await sessions.createOAuthState({ orgId: org.id, instanceId, purpose, verifier, binding: sha256(binding) });
+  const state = await sessions.createOAuthState({ orgId: org.id, instanceId, purpose, verifier, binding: sha256(binding), meta });
 
   const url = new URL(`${instanceCfg.instanceUrl}/oauth_auth.do`);
   url.searchParams.set('response_type', 'code');
@@ -295,6 +314,41 @@ app.get('/auth/verify', async (req, res) => {
   }
 });
 
+/**
+ * Mint an MCP token (ADR 0014 D2). A second, independent authorization-code
+ * flow rather than a copy of the browser session's pair: the instance issues
+ * one oauth_credential row per grant, so the two credentials get independent
+ * lifecycles — signing out of the console does not kill the MCP token, and
+ * revoking the MCP token does not sign the browser out.
+ */
+app.get('/auth/mcp', async (req, res) => {
+  try {
+    const session = await getSession(req);
+    if (!session || session.member?.status !== 'active') return loginRedirect(res, 'Sign in to connect an MCP client.');
+    if (session.org.mcp_enabled !== true) {
+      return res.status(403).send('MCP access is turned off for this workspace. An org admin can enable it under Admin → Access.');
+    }
+    const label = String(req.query.label || '').trim().slice(0, 40) || 'mcp client';
+    await beginOAuth(res, {
+      org: session.org,
+      ctx: session.ctx,
+      instanceId: session.instanceId,
+      purpose: 'mcp',
+      // What the person asked for, raw: the callback clamps it against the org
+      // and instance as they are when the token is actually minted, and records
+      // which bound applied. Clamping here as well would lose that reason.
+      meta: {
+        label,
+        requestedTtlMs: Number(req.query.ttl_ms) || 0,
+        memberId: session.memberId,
+        userSysId: session.userSysId,
+      },
+    });
+  } catch (err) {
+    res.status(400).send(`Could not start the MCP authorization: ${err.message}`);
+  }
+});
+
 app.get('/auth/callback', async (req, res) => {
   const { code, state, error } = req.query;
   const clearBinding = `${OAUTH_COOKIE}=; ${cookieAttrs(0)}`;
@@ -324,6 +378,50 @@ app.get('/auth/callback', async (req, res) => {
     const sn = new SnClient(instanceCfg, tokens, (t) => { holder.tokens = t; }, { org: org.slug || org.name, userKey: 'pre-auth' });
     const user = await sn.whoami();
     if (!user?.sys_id) throw new Error('signed in, but could not read your own user record — the instance denied the read');
+
+    // A mint completes only for the browser that started it, as the same
+    // person (ADR 0014 D2). Otherwise the fresh pair is revoked at the issuer
+    // rather than sealed into a row under someone else's name.
+    if (pending.purpose === 'mcp') {
+      const sid = readCookie(req, SID_COOKIE);
+      const session = sid ? await getSession(req) : null;
+      if (!session || session.member?.status !== 'active' || session.userSysId !== user.sys_id) {
+        await Promise.allSettled([
+          revokeToken(instanceCfg, holder.tokens?.accessToken),
+          revokeToken(instanceCfg, holder.tokens?.refreshToken),
+        ]);
+        throw new Error('the account that authorized on ServiceNow is not the account signed in here');
+      }
+      if (session.org.mcp_enabled !== true) {
+        await Promise.allSettled([
+          revokeToken(instanceCfg, holder.tokens?.accessToken),
+          revokeToken(instanceCfg, holder.tokens?.refreshToken),
+        ]);
+        throw new Error('MCP access is turned off for this workspace');
+      }
+      const meta = pending.meta || {};
+      // Re-clamped here against the org and instance as they are *now*, and
+      // the bound that decided it is recorded with the row: reading it back
+      // later would answer for today's settings, not the ones that applied.
+      const { ttlMs, clampedBy } = tenancy.mcpTokenTtlFor(session.org, meta.requestedTtlMs, session.instance);
+      const minted = await sessions.createMcpToken({
+        orgId: org.id,
+        instanceId: pending.instance_id,
+        memberId: session.memberId,
+        userSysId: user.sys_id,
+        user,
+        label: String(meta.label || 'mcp client').slice(0, 40),
+        tokens: holder.tokens,
+        ttlMs,
+        clampedBy,
+        revealFor: sid,
+      });
+      // Minting is a person's own deliberate act on their own consent screen,
+      // so it is audited as human-approved like every catalog commit.
+      await auditFor(session, { action: 'mcp_token_mint', token_id: minted.id, token_label: meta.label || 'mcp client', approved_by_user: true });
+      res.setHeader('Set-Cookie', clearBinding);
+      return res.redirect(`/?mcp=${minted.id}`);
+    }
 
     let member;
     let next = '/';
@@ -358,6 +456,10 @@ app.get('/auth/callback', async (req, res) => {
     res.setHeader('Set-Cookie', clearBinding);
     if (pending.purpose === 'verify') {
       return res.redirect('/start?step=verify&error=' + encodeURIComponent(err.message));
+    }
+    if (pending.purpose === 'mcp') {
+      // The console is still signed in; only the mint failed. Say why there.
+      return res.redirect('/?mcp_error=' + encodeURIComponent(err.message));
     }
     res.status(502).send(`Could not complete sign-in: ${err.message}`);
   }
@@ -458,6 +560,9 @@ async function meFor(session) {
     models: billing.availableModels(session.org),
     default_model: billing.availableModels(session.org)[0]?.id || gate.model.model,
     autonomous_available: session.org.autonomous_mode === true,
+    // ADR 0014 D5: the MCP section of the profile panel exists only where an
+    // org admin has turned the surface on.
+    mcp_available: session.org.mcp_enabled === true,
     instance_non_production: session.instance.non_production === true,
     effort: billing.availableModels(session.org)[0]?.default_effort || '',
     plan: gate.plan,
@@ -510,6 +615,62 @@ app.get('/api/profile', async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: String(err.message) });
   }
+});
+
+// ---- MCP tokens (ADR 0014): rows in the workspace database, never a call to
+// the instance. The bearer itself is never listed and never re-shown; the
+// reveal below opens a ciphertext sealed under this very browser's cookie. ----
+
+app.get('/api/mcp/tokens', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  try {
+    // What the longest lifetime this person could ask for actually resolves to,
+    // and which bound decided it — so the picker offers only real options.
+    const ceiling = tenancy.mcpTokenTtlFor(session.org, tenancy.MCP_TOKEN_CEILING_MS, session.instance);
+    res.json({
+      enabled: session.org.mcp_enabled === true,
+      base_url: cfg.baseUrl,
+      instance_host: session.instance.host,
+      ceiling: { ttl_ms: ceiling.ttlMs, clamped_by: ceiling.clampedBy },
+      refresh_token_lifespan_s: session.instance.refresh_token_lifespan_s || null,
+      tokens: await sessions.listMcpTokens(session.ctx, session.memberId),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message) });
+  }
+});
+
+app.post('/api/mcp/tokens/:id/reveal', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  // The reveal is sealed under sessionKey(this cookie): another browser — an
+  // admin's included — decrypts nothing, and the column is nulled on the way
+  // out, so the second call is a 410 rather than a second showing.
+  const sid = readCookie(req, SID_COOKIE);
+  const revealed = sid ? await sessions.revealMcpToken(req.params.id, sid) : null;
+  if (!revealed) return res.status(410).json({ error: 'that token has already been shown, or the window has closed' });
+  res.json({
+    bearer: revealed.bearer,
+    label: revealed.label,
+    expires_at: new Date(revealed.expiresAt).toISOString(),
+    // Recorded at the mint, not recomputed: the bound that shortened this
+    // token is a fact about that moment (ADR 0014 D2).
+    clamped_by: revealed.clampedBy,
+    base_url: cfg.baseUrl,
+    instance_host: session.instance.host,
+  });
+});
+
+app.post('/api/mcp/tokens/:id/revoke', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  // A person revokes their own; an admin revokes any token in the org.
+  const scopeToMember = isAdmin(session) ? null : session.memberId;
+  const marked = await sessions.revokeMcpToken(session.ctx, req.params.id, scopeToMember);
+  if (!marked) return res.status(404).json({ error: 'token not found' });
+  await auditFor(session, { action: 'mcp_token_revoke', token_id: req.params.id, approved_by_user: true });
+  res.json({ ok: true });
 });
 
 // ---- conversations ----
@@ -704,6 +865,102 @@ app.post('/api/approval/decide', commitRoute('approval.decide'));    // Approve 
 app.post('/api/artifact/update', commitRoute('config.update'));      // Apply, on a proposed change to an existing record
 app.post('/api/catalog/order', commitRoute('catalog.order'));        // Order, on a proposed order
 app.post('/api/change/create', commitRoute('change.create'));        // Create, on a proposed change request
+
+// ---- the update set package: the work, as a file you can hand over ----
+//
+// A GET, deliberately, and not a catalog entry: packaging reads
+// sys_update_set and sys_update_xml on the person's own token and writes
+// nothing anywhere. It is here rather than beside the other reads because
+// this is what the write endpoints above are *for* — the changes they
+// committed, collected into the artifact that leaves the instance.
+//
+// The package is rebuilt per request instead of stored. The console holds no
+// copy of anyone's configuration that way, and a download is always the set
+// as it is now rather than as it was when a card was clicked.
+//
+// Two credentials reach it (ADR 0014 D9). A browser presents its session
+// cookie. An MCP client presents the same bearer it uses for POST /mcp — the
+// one endpoint outside /mcp that accepts one, because this deliverable is a
+// file: an update set is hundreds of kilobytes to megabytes, a tool result
+// truncates, and a truncated package is the one failure this must not have.
+// It grants the bearer no data it could not already read (`sn_query` selects
+// `payload` from `sys_update_xml` today); it is another door with the same
+// locks — revoke-on-present, the org and member checks, the per-token rate
+// limit, and an audit row naming the token.
+
+function sendPackage(res, pkg, format) {
+  const { contentType, filename, body } = packageResponse(pkg, format);
+  res.setHeader('Content-Type', contentType);
+  // The filename is a slug of the set name: [a-z0-9-] only, so it needs no
+  // quoting games in the header.
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.send(body);
+}
+
+const packageAudit = (pkg, format) => ({
+  update_set: pkg.manifest.sys_id,
+  update_set_name: pkg.manifest.update_set,
+  changes: pkg.manifest.changes,
+  bytes: pkg.bytes,
+  sha256: pkg.sha256,
+  format,
+  // No `approved_by_user`. That flag means "a human clicked, and the instance
+  // changed" — it is how a reviewer counts writes. Configuration leaving the
+  // instance is worth a row of its own, but it is not that.
+});
+
+app.get('/api/update-set/:sysId/package.:format', async (req, res) => {
+  const sysId = String(req.params.sysId || '');
+  const format = String(req.params.format || '');
+  if (!/^[0-9a-f]{32}$/i.test(sysId)) return res.status(400).json({ error: 'not a sys_id' });
+  if (format !== 'xml' && format !== 'md') return res.status(404).json({ error: 'package.xml or package.md' });
+
+  // Both branches audit the outcome, not just the success. "Who pulled a
+  // package, and when" is the question this row exists for, and an attempt
+  // that failed is part of the answer.
+  const failed = (err, res_) => {
+    if (err instanceof PackageError) return res_.status(err.code === 'not_found' ? 404 : 409).json({ error: err.message, code: err.code });
+    return res_.status(502).json({ error: String(err.message) });
+  };
+
+  // The bearer first: requireActive writes its own 401, so asking it about a
+  // request that never had a cookie would answer the wrong question.
+  if (/^Bearer\s/i.test(String(req.headers.authorization || ''))) {
+    try {
+      return await mcp.withBearer(req, cfg, async (principal) => {
+        try {
+          const pkg = await buildUpdateSetPackage(principal.sn, { sys_id: sysId, actor: principal.user?.user_name });
+          await mcp.auditBearer(principal, { action: 'mcp_update_set_package', ...packageAudit(pkg, format) });
+          return sendPackage(res, pkg, format);
+        } catch (err) {
+          await mcp.auditBearer(principal, { action: 'mcp_update_set_package', update_set: sysId, format, error: true, summary: String(err.message).slice(0, 200) });
+          return failed(err, res);
+        }
+      });
+    } catch (err) {
+      // Only authentication and the rate limit reach here; the packager's own
+      // failures were answered above, with a row behind them.
+      if (err instanceof mcp.McpAuthError) {
+        for (const [header, value] of Object.entries(err.headers || {})) res.setHeader(header, value);
+        return res.status(err.status).json({ error: err.message });
+      }
+      return res.status(502).json({ error: String(err.message) });
+    }
+  }
+
+  const session = await requireActive(req, res);
+  if (!session) return;
+  try {
+    const sn = await snFor(session);
+    const pkg = await buildUpdateSetPackage(sn, { sys_id: sysId, actor: session.user?.user_name });
+    await auditFor(session, { action: 'update_set_package', ...packageAudit(pkg, format) });
+    sendPackage(res, pkg, format);
+  } catch (err) {
+    await auditFor(session, { action: 'update_set_package', update_set: sysId, format, error: true, summary: String(err.message).slice(0, 200) });
+    failed(err, res);
+  }
+});
 
 // ---- runs (ADR 0011): longer work in stages, from a plan the person approved ----
 //
@@ -997,11 +1254,12 @@ app.get('/api/admin', async (req, res) => {
   const session = await requireAdmin(req, res);
   if (!session) return;
   try {
-    const [instances, members, usage, auditRows] = await Promise.all([
+    const [instances, members, usage, auditRows, mcpTokens] = await Promise.all([
       tenancy.listInstances(session.ctx),
       tenancy.listMembers(session.ctx),
       billing.usageSummary(session.ctx),
       listAudit(session.scope, { limit: 50 }),
+      sessions.listMcpTokens(session.ctx),
     ]);
     res.json({
       org: tenancy.publicOrg(session.org),
@@ -1025,6 +1283,8 @@ app.get('/api/admin', async (req, res) => {
       callback_url: cfg.callbackUrl,
       mode: cfg.mode,
       audit: auditRows,
+      mcp_tokens: mcpTokens,
+      mcp_ceiling_ms: tenancy.MCP_TOKEN_CEILING_MS,
     });
   } catch (err) {
     res.status(500).json({ error: String(err.message) });

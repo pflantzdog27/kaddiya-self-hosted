@@ -66,6 +66,7 @@ Report a table: check · expected · observed · PASS or FAIL. If anything faile
 ## Test results (one line per check)
 ## What was not done, and why (empty if nothing)
 ## How to back out
+Then, if the tests passed and the set holds the work, call sn_package_update_set for this run's update set — the deliverable is the package, not the console transcript. Say what it holds; the person downloads it and loads it on the target themselves. Skip it if anything failed, and say why.
 Then propose instance notes (sn_note_save) for anything durable this run taught about this instance: a renamed field, a rule that fires first, a table hidden by an ACL, a naming convention. One fact per note, only if it would trip the next person. Do not propose instance writes in this stage.`,
   },
   investigate: {

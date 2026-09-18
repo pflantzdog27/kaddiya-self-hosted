@@ -44,6 +44,7 @@ async function init() {
       instance_non_production: data.instance_non_production === true,
       models: Array.isArray(data.models) ? data.models : [],
       default_model: data.default_model || data.model_id || data.model,
+      mcp_available: data.mcp_available === true,
     };
     document.getElementById('who-name').innerHTML =
       `<span class="who-line1">${escapeHtml(me.name)}</span><span class="who-line2">${escapeHtml(me.instance_host)}</span>`;
@@ -76,6 +77,17 @@ async function init() {
     } catch { btn.textContent = 'Select and copy'; }
   });
   document.getElementById('who').addEventListener('click', showProfile);
+
+  // Coming back from the instance's consent screen (ADR 0014): `?mcp=<id>` is
+  // the one chance to show the bearer, `?mcp_error=` says why there was none.
+  // The parameter is stripped either way so a reload cannot replay it.
+  const params = new URLSearchParams(location.search);
+  if (params.has('mcp') || params.has('mcp_error')) {
+    const id = params.get('mcp');
+    const error = params.get('mcp_error');
+    history.replaceState(null, '', location.pathname);
+    if (id) showMcpReveal(id); else showMcpError(error);
+  }
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); startNewChat(); }
   });
@@ -719,6 +731,8 @@ async function showProfile() {
     body.appendChild(org);
   }
 
+  if (me?.mcp_available) await appendMcpSection(body, host);
+
   appendChipSection(body, 'ROLES · from sys_user_has_role', data.roles?.direct, 'No roles assigned directly.');
   if (data.roles?.inherited?.length) {
     appendChipSection(body, `INHERITED · ${data.roles.inherited.length} via role containment`, data.roles.inherited);
@@ -768,6 +782,255 @@ async function showProfile() {
     location.assign(`/auth/login?instance=${encodeURIComponent(me?.instance_host || '')}`);
   });
   body.appendChild(foot);
+}
+
+// ---- MCP access (ADR 0014) ----
+//
+// Connecting a client is a second OAuth consent on the instance, so the button
+// navigates rather than submits: form-action 'self' would block the redirect
+// that follows a real form submission (the csp.test.js note on login.js).
+
+const MCP_LIFETIMES = [
+  [2592000000, '30 days'],
+  [604800000, '7 days'],
+  [86400000, '1 day'],
+];
+
+const CLAMP_REASONS = {
+  refresh_token_lifespan: "your instance's OAuth refresh-token lifespan",
+  org_ceiling: "this workspace's maximum",
+  code_ceiling: "Kaddiya's 90-day maximum",
+};
+
+async function appendMcpSection(body, host) {
+  let data;
+  try {
+    const res = await fetch('/api/mcp/tokens');
+    data = await res.json();
+    if (!res.ok || !data.enabled) return;
+  } catch { return; }
+
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+  section.innerHTML = '<div class="mono-label">MCP ACCESS · read-only</div>';
+
+  const note = document.createElement('div');
+  note.className = 'mcp-note';
+  note.textContent = `Connect an MCP client — Claude Code, Claude Desktop — to ${host} as yourself. `
+    + 'It gets the twelve read tools and nothing that writes: to change a record, come back here and approve the card. '
+    + 'Every call is audited to the token you name below.';
+  section.appendChild(note);
+
+  const rows = document.createElement('div');
+  rows.className = 'group-rows mcp-tokens';
+  renderMcpTokens(rows, data.tokens, host);
+  section.appendChild(rows);
+
+  // The connect form: a label and a lifetime, then off to the instance.
+  const form = document.createElement('div');
+  form.className = 'mcp-connect';
+  const label = document.createElement('input');
+  label.className = 'text-input compact';
+  label.maxLength = 40;
+  label.placeholder = 'claude-code laptop';
+  label.setAttribute('aria-label', 'What this token is for');
+  const lifetime = document.createElement('select');
+  lifetime.className = 'text-input compact';
+  lifetime.setAttribute('aria-label', 'How long the token lives');
+  // The workspace maximum is a real number, sent as one: asking for "the
+  // maximum" and getting the 30-day default would be a quiet lie.
+  const ceiling = Number(data.ceiling?.ttl_ms) || 0;
+  const choices = [...MCP_LIFETIMES.filter(([ms]) => !ceiling || ms < ceiling)];
+  if (ceiling) choices.unshift([ceiling, `${humanDuration(ceiling)} (the maximum here)`]);
+  for (const [value, text] of choices) {
+    const option = document.createElement('option');
+    option.value = String(value);
+    option.textContent = text;
+    lifetime.appendChild(option);
+  }
+  // Default to 30 days where the ceiling allows it, as the longest ordinary choice.
+  lifetime.value = String(choices.find(([ms]) => ms === 2592000000)?.[0] ?? choices[0][0]);
+
+  const connect = document.createElement('button');
+  connect.type = 'button';
+  connect.className = 'btn-ghost';
+  connect.textContent = 'Connect a client';
+  connect.addEventListener('click', () => {
+    const name = label.value.trim() || 'mcp client';
+    location.assign(`/auth/mcp?${new URLSearchParams({ label: name, ttl_ms: lifetime.value })}`);
+  });
+  form.append(label, lifetime, connect);
+  section.appendChild(form);
+
+  const hint = document.createElement('div');
+  hint.className = 'mcp-hint';
+  hint.textContent = data.ceiling?.clamped_by === 'refresh_token_lifespan'
+    ? `This instance's OAuth refresh-token lifespan caps every token at ${humanDuration(ceiling)}. An admin can raise it on the instance and re-verify.`
+    : `You authorize on ${host} again; the token is yours alone and you can revoke it here at any time.`;
+  section.appendChild(hint);
+
+  body.appendChild(section);
+}
+
+function renderMcpTokens(rows, tokens, host) {
+  rows.innerHTML = '';
+  if (!tokens?.length) {
+    rows.innerHTML = '<span class="conv-empty">No client connected.</span>';
+    return;
+  }
+  for (const token of tokens) {
+    const row = document.createElement('div');
+    row.className = 'group-row mcp-token';
+    const left = document.createElement('div');
+    left.className = 'mcp-token-id';
+    const name = document.createElement('span');
+    name.textContent = token.label;
+    const meta = document.createElement('span');
+    meta.className = 'group-type';
+    const clamp = CLAMP_REASONS[token.clamped_by];
+    meta.textContent = `${token.prefix}… · ${token.last_used_at ? `used ${shortDate(token.last_used_at)}` : 'never used'} · expires ${shortDate(token.expires_at)}`
+      + (clamp ? ` (shortened by ${clamp})` : '');
+    left.append(name, meta);
+    const revoke = document.createElement('button');
+    revoke.type = 'button';
+    revoke.className = 'signout';
+    revoke.textContent = token.revoked ? 'Revoked' : 'Revoke';
+    revoke.disabled = token.revoked;
+    revoke.addEventListener('click', async () => {
+      revoke.disabled = true;
+      try {
+        await fetch(`/api/mcp/tokens/${token.id}/revoke`, { method: 'POST' });
+        revoke.textContent = 'Revoked';
+      } catch { revoke.disabled = false; }
+    });
+    row.append(left, revoke);
+    rows.appendChild(row);
+  }
+}
+
+function shortDate(iso) {
+  try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+  catch { return iso; }
+}
+
+function humanDuration(ms) {
+  const hours = Math.round(ms / 3600_000);
+  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'}`;
+  return `${Math.round(hours / 24)} days`;
+}
+
+/**
+ * The one showing. The bearer is sealed under this browser's own cookie for
+ * five minutes and nulled as it is read, so this panel is the only place it
+ * ever appears — reload the page and it is gone for good.
+ */
+async function showMcpReveal(id) {
+  let data;
+  try {
+    const res = await fetch(`/api/mcp/tokens/${id}/reveal`, { method: 'POST' });
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  } catch (err) {
+    return showMcpError(err.message);
+  }
+
+  const back = document.createElement('div');
+  back.className = 'mcp-reveal-back';
+  const card = document.createElement('div');
+  card.className = 'mcp-reveal';
+
+  const head = document.createElement('div');
+  head.className = 'mcp-reveal-head';
+  head.innerHTML = '<div class="mcp-reveal-title">Your MCP token</div>';
+  const sub = document.createElement('div');
+  sub.className = 'mcp-reveal-sub';
+  const clamp = CLAMP_REASONS[data.clamped_by];
+  sub.textContent = `${data.label} · expires ${new Date(data.expires_at).toLocaleString()}`
+    + (clamp ? ` — shortened by ${clamp}.` : '')
+    + ' This is the only time it is shown. Copy it now.';
+  head.appendChild(sub);
+  card.appendChild(head);
+
+  card.appendChild(copyBlock('The token', data.bearer, 'mcp-bearer'));
+
+  const snippets = [
+    ['Claude Code', `claude mcp add --transport http kaddiya ${data.base_url}/mcp \\\n  --header "Authorization: Bearer \${KADDIYA_MCP_TOKEN}"`],
+    ['.mcp.json / any HTTP host', JSON.stringify({
+      mcpServers: { kaddiya: { type: 'http', url: `${data.base_url}/mcp`, headers: { Authorization: 'Bearer ${KADDIYA_MCP_TOKEN}' } } },
+    }, null, 2)],
+    ['Claude Desktop, through the stdio shim', JSON.stringify({
+      mcpServers: {
+        kaddiya: {
+          command: 'node',
+          args: ['/path/to/kaddiya-mcp.mjs'],
+          env: { KADDIYA_MCP_URL: `${data.base_url}/mcp`, KADDIYA_MCP_TOKEN: 'kmcp_…' },
+        },
+      },
+    }, null, 2)],
+  ];
+  for (const [title, text] of snippets) card.appendChild(copyBlock(title, text));
+
+  const shim = document.createElement('a');
+  shim.className = 'mcp-shim-link';
+  shim.href = '/kaddiya-mcp.mjs';
+  shim.setAttribute('download', 'kaddiya-mcp.mjs');
+  shim.textContent = 'Download kaddiya-mcp.mjs (for Claude Desktop)';
+  card.appendChild(shim);
+
+  const done = document.createElement('button');
+  done.type = 'button';
+  done.className = 'btn-primary';
+  done.textContent = 'I have copied it';
+  done.addEventListener('click', () => { back.remove(); showProfile(); });
+  card.appendChild(done);
+
+  back.appendChild(card);
+  document.body.appendChild(back);
+}
+
+function copyBlock(title, text, extraClass) {
+  const wrap = document.createElement('div');
+  wrap.className = `mcp-copy ${extraClass || ''}`.trim();
+  const label = document.createElement('div');
+  label.className = 'mono-label';
+  label.textContent = title;
+  const pre = document.createElement('pre');
+  pre.textContent = text;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn-ghost';
+  button.textContent = 'Copy';
+  button.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+    } catch { button.textContent = 'Select and copy'; }
+  });
+  wrap.append(label, pre, button);
+  return wrap;
+}
+
+function showMcpError(message) {
+  const back = document.createElement('div');
+  back.className = 'mcp-reveal-back';
+  const card = document.createElement('div');
+  card.className = 'mcp-reveal';
+  const head = document.createElement('div');
+  head.className = 'mcp-reveal-head';
+  head.innerHTML = '<div class="mcp-reveal-title">The client was not connected</div>';
+  const sub = document.createElement('div');
+  sub.className = 'mcp-reveal-sub';
+  sub.textContent = message;
+  head.appendChild(sub);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'btn-primary';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => back.remove());
+  card.append(head, close);
+  back.appendChild(card);
+  document.body.appendChild(back);
 }
 
 function appendChipSection(body, label, items, emptyText) {
@@ -1454,6 +1717,37 @@ function makeApprovalCard({ sys_id, decision, comments, approving }) {
 // It now follows the same pattern as every other write: the agent proposes,
 // the human commits, on the human's credentials.
 
+// The package card: not a proposal, so it has no Discard and no pending
+// state. The files already describe changes the person committed; these
+// buttons download them. Nothing here touches the instance.
+function makePackageCard({ sys_id, update_set, state, changes, by_type, bytes, warnings, filenames }) {
+  const card = document.createElement('div');
+  card.className = 'nc-card done';
+  const kb = Math.max(1, Math.round((bytes || 0) / 1024));
+  const types = (by_type || []).map((t) => `${t.count} × ${t.type}`).join(' · ');
+  const base = `/api/update-set/${encodeURIComponent(sys_id)}/package`;
+  card.innerHTML = `
+    <div class="nc-head">
+      <span class="dot green"></span>
+      <span class="nc-title">Update set package</span>
+      <span class="nc-badge">PACKAGE</span>
+      <span class="nc-head-right">${escapeHtml(String(changes))} change${changes === 1 ? '' : 's'} · ${kb} KB</span>
+    </div>
+    <div class="nc-fields">
+      <div class="label">Update set</div><div class="val name">${escapeHtml(update_set || '')}</div>
+      <div class="label">State</div><div class="val">${escapeHtml(state || '')}</div>
+      ${types ? `<div class="label">Contents</div><div class="val">${escapeHtml(types)}</div>` : ''}
+    </div>
+    ${(warnings || []).length ? `<div class="nc-prose">${(warnings || []).map((w) => escapeHtml(w)).join('<br>')}</div>` : ''}
+    <div class="nc-foot">
+      <div class="nc-caption">Read from the instance; nothing was changed. Load it on the target with
+        <span class="hl">Retrieved Update Sets → Import Update Set from XML</span>, then Preview and Commit there.</div>
+      <a class="btn-ghost" download="${escapeHtml(filenames?.ledger || 'ledger.md')}" href="${escapeHtml(base)}.md">Ledger</a>
+      <a class="btn-primary" download="${escapeHtml(filenames?.xml || 'update-set.xml')}" href="${escapeHtml(base)}.xml">Download XML</a>
+    </div>`;
+  return card;
+}
+
 function makeUpdateSetCard({ name, description, current }) {
   const card = document.createElement('div');
 
@@ -1696,6 +1990,7 @@ function handleSharedEvent(event, data, assistant, textEl, toolCards) {
   if (event === 'artifact') { place(makeArtifactCard(data)); return true; }
   if (event === 'proposal') { place(makeProposalCard(data)); return true; }
   if (event === 'update_set_proposal') { place(makeUpdateSetCard(data)); return true; }
+  if (event === 'package') { assistant.insertBefore(makePackageCard(data), textEl); return true; }
   if (event === 'note') { assistant.insertBefore(makeNoteCard(data), textEl); return true; }
   if (event === 'committed') {
     const card = proposalCards.get(data.proposal_id);

@@ -66,6 +66,45 @@ Branding is included in your normal local data backup and survives updates and r
 
 For tomorrow's walkthrough, see the [local demo guide](docs/local-demo.md).
 
+## Connect an MCP client
+
+A member can point an MCP host — Claude Code, Claude Desktop — at their own ServiceNow
+instance through Kaddiya. They get **the twelve read tools and nothing that writes**: to
+change a record you come back to the console and approve the card, as always.
+
+It is off by default. An admin turns it on under **Admin → Access**; a member then opens
+their profile panel (click your name, bottom left), names the client, picks a lifetime and
+authorizes on ServiceNow once more. The token is shown one time, with the config to paste:
+
+```bash
+claude mcp add --transport http kaddiya http://localhost:3000/mcp \
+  --header "Authorization: Bearer ${KADDIYA_MCP_TOKEN}"
+```
+
+Claude Desktop cannot send a header, so the console serves a small stdio shim
+(`/kaddiya-mcp.mjs`) that bridges it; the same screen offers the download and the JSON.
+
+Each token belongs to one person on one instance, carries an absolute expiry that never
+slides, and is revocable by that person and by any admin. Every call is audited. On a local
+workspace the token travels over loopback in the clear — that is expected, and no tunnel is
+needed. See [apps/console/README.md](apps/console/README.md#connect-an-mcp-client) for the
+full behaviour, and [docs/kit/02](docs/kit/02-oauth-registry-runbook.md) for the one instance
+setting that caps token lifetimes.
+
+## Hand the work over
+
+When a change is built and captured in an update set, ask for the package. Kaddiya reads the
+set back and gives you two downloads: the **update set XML**, the same `<unload>` file the
+platform's own Export to XML produces, and a **ledger** listing every change, the instance it
+came from, and a SHA-256 of the file.
+
+Nothing is written to build a package — it is a read of the set you already committed to. An
+MCP client can fetch the same two files with its own token, so a build driven from Claude Code
+ends with the package on disk. Load it on the target instance the usual way:
+**Retrieved Update Sets → Import Update Set from XML**, then **Preview** and **Commit** there.
+The preview is ServiceNow's own diff, so the review happens where the change is going to land,
+not here.
+
 ## Choose and switch models
 
 Use **Admin → Your models** to add, edit, remove, or set a default model connection. Each
@@ -175,6 +214,7 @@ The local launcher and Docker deployment keep separate data; changing launchers 
 
 Enterprise reference material:
 
+- [Architecture](docs/architecture.md) — what runs where, and what makes the claims checkable
 - [OAuth registry runbook](docs/kit/02-oauth-registry-runbook.md)
 - [REST API access policy](docs/kit/04-rest-api-access-policy.md)
 - [Egress controls](docs/kit/05-egress-pinning.md)

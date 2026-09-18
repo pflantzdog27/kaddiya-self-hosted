@@ -119,7 +119,11 @@ test('audit_events is append-only for the app role', async () => {
 });
 
 test('(e) the directory role appears only in the modules allowed to use it', () => {
-  const ALLOWED = new Set(['db.js', 'tenancy.js', 'sessions.js', 'billing.js', 'site-chat.js']);
+  // `site-chat.js` was on this list and is not in server/ — a stale allowance
+  // widens the gate for a file nobody has reviewed, so it is gone (ADR 0014,
+  // drift found in passing). `sessions.js` covers the MCP bearer lookup too:
+  // a bearer resolves to an org before the tenant is known, as a cookie does.
+  const ALLOWED = new Set(['db.js', 'tenancy.js', 'sessions.js', 'billing.js']);
   for (const file of fs.readdirSync(SERVER_DIR).filter((f) => f.endsWith('.js'))) {
     const source = fs.readFileSync(path.join(SERVER_DIR, file), 'utf8');
     const uses = /\bsystem\(/.test(source);

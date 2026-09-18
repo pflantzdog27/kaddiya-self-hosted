@@ -18,19 +18,23 @@ import { withOrg, system } from './db.js';
 import { OrgContext, newWrappedDek } from './keys.js';
 
 export const SESSION_CEILING_MS = 8 * 60 * 60 * 1000;
+/** ADR 0014 D2: the code ceiling an org may only move downward from. */
+export const MCP_TOKEN_CEILING_MS = 90 * 24 * 60 * 60 * 1000;
+export const MCP_TOKEN_DEFAULT_MS = 30 * 24 * 60 * 60 * 1000;
 const DRAFT_TTL_DAYS = 14;
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('base64url');
 
 const ORG_PUBLIC_COLUMNS = `id, name, branding, slug, region, edition, status, join_policy, deny_external, required_role,
-  actions_tiers, session_ttl_ms, runs_plan_mode, autonomous_mode, default_model_connection,
+  actions_tiers, session_ttl_ms, runs_plan_mode, autonomous_mode, mcp_enabled, mcp_token_ttl_ms, default_model_connection,
   COALESCE((SELECT jsonb_agg(c - 'key_enc') FROM jsonb_array_elements(orgs.model_connections) c), '[]'::jsonb) AS model_connections,
   model_provider, model_id, model_base_url, model_effort,
   plan, plan_status, stripe_customer_id, stripe_subscription_id, verified_at, anchor_instance_id,
   expires_at, created_at, updated_at, dek_wrapped, key_version, (model_key_enc IS NOT NULL) AS has_model_key`;
 
 const INSTANCE_PUBLIC_COLUMNS = `id, org_id, label, host, instance_id, client_id, status, verified_by_sys_id,
-  verified_by_user_name, verified_at, oauth_entity_sys_id, edge_encryption, non_production, created_at, updated_at`;
+  verified_by_user_name, verified_at, oauth_entity_sys_id, edge_encryption, non_production,
+  refresh_token_lifespan_s, created_at, updated_at`;
 
 /** A personal developer instance, by host. Marked non-production at registration (ADR 0011 D3). */
 export const isDeveloperInstance = (host) => /^dev\d+\.service-now\.com$/.test(String(host || ''));
@@ -68,6 +72,29 @@ export function contextFor(orgRow) {
 export function sessionTtlFor(org) {
   const requested = Number(org?.session_ttl_ms) || SESSION_CEILING_MS;
   return Math.max(5 * 60 * 1000, Math.min(requested, SESSION_CEILING_MS));
+}
+
+/**
+ * The effective lifetime of a new MCP token (ADR 0014 D2), and which bound
+ * decided it: the person's request, then the org's ceiling, then the code
+ * ceiling, then the instance's own refresh-token lifespan when the
+ * verification read recorded one. The last is the real-world one —
+ * docs/kit/02 tells instance admins to set 28,800 s, which silently caps a
+ * 30-day token at eight hours unless we say so — so the reveal names it.
+ */
+export function mcpTokenTtlFor(org, requestedMs, instance) {
+  const asked = Number(requestedMs) > 0 ? Number(requestedMs) : MCP_TOKEN_DEFAULT_MS;
+  let ttl = Math.max(60 * 1000, Math.min(asked, MCP_TOKEN_CEILING_MS));
+  let clampedBy = ttl < asked ? 'code_ceiling' : null;
+
+  const orgCeiling = Number(org?.mcp_token_ttl_ms) || 0;
+  if (orgCeiling > 0 && orgCeiling < ttl) { ttl = orgCeiling; clampedBy = 'org_ceiling'; }
+
+  const lifespanMs = Number(instance?.refresh_token_lifespan_s) > 0
+    ? Number(instance.refresh_token_lifespan_s) * 1000 : 0;
+  if (lifespanMs > 0 && lifespanMs < ttl) { ttl = lifespanMs; clampedBy = 'refresh_token_lifespan'; }
+
+  return { ttlMs: ttl, clampedBy };
 }
 
 // ---- orgs ----
@@ -138,11 +165,13 @@ export async function orgForDraft(draftSecret) {
   return rows[0] || null;
 }
 
-const SETTABLE = new Set(['name', 'branding', 'join_policy', 'deny_external', 'required_role', 'actions_tiers', 'session_ttl_ms', 'runs_plan_mode', 'autonomous_mode']);
+const SETTABLE = new Set(['name', 'branding', 'join_policy', 'deny_external', 'required_role', 'actions_tiers',
+  'session_ttl_ms', 'runs_plan_mode', 'autonomous_mode', 'mcp_enabled', 'mcp_token_ttl_ms']);
 
 export async function updateOrgSettings(ctx, patch) {
   const sets = [];
   const values = [];
+  let mcpTurnedOff = false;
   for (const [key, raw] of Object.entries(patch || {})) {
     if (!SETTABLE.has(key)) continue;
     let value = raw;
@@ -151,18 +180,26 @@ export async function updateOrgSettings(ctx, patch) {
     if (key === 'join_policy') value = raw === 'auto' ? 'auto' : 'approve';
     if (key === 'deny_external') value = raw !== false && raw !== 'false';
     if (key === 'runs_plan_mode' || key === 'autonomous_mode') value = raw === true || raw === 'true';  // ADR 0011 D3, condition 1
+    // ADR 0014 D5: off by default, and turning it off revokes every token.
+    if (key === 'mcp_enabled') { value = raw === true || raw === 'true'; mcpTurnedOff = !value; }
     if (key === 'required_role') value = String(raw || '').trim().slice(0, 80) || null;
     if (key === 'actions_tiers') {
       const tiers = String(raw || '').split(',').map((t) => t.trim()).filter((t) => /^[123]$/.test(t));
       value = tiers.length ? [...new Set(tiers)].sort().join(',') : '1';
     }
     if (key === 'session_ttl_ms') value = raw ? Math.min(Number(raw), SESSION_CEILING_MS) : null;
+    if (key === 'mcp_token_ttl_ms') value = raw ? Math.min(Number(raw), MCP_TOKEN_CEILING_MS) : null;
     if (value === null && key === 'name') continue;
     values.push(value);
     sets.push(`${key} = $${values.length}`);
   }
   if (!sets.length) return getOrg(ctx.orgId);
-  await withOrg(ctx.orgId, (c) => c.query(`UPDATE orgs SET ${sets.join(', ')}, updated_at = now() WHERE id = current_setting('app.org_id')::uuid`, values));
+  await withOrg(ctx.orgId, async (c) => {
+    await c.query(`UPDATE orgs SET ${sets.join(', ')}, updated_at = now() WHERE id = current_setting('app.org_id')::uuid`, values);
+    // The org wall does the WHERE: inside withOrg this cannot reach another
+    // org's rows even though the statement names no org_id (D3).
+    if (mcpTurnedOff) await c.query(`UPDATE mcp_tokens SET revoke_on_present = true`);
+  });
   return getOrg(ctx.orgId);
 }
 
@@ -375,13 +412,21 @@ export async function verifyInstance(ctx, instanceId, { sn, user, expectedRedire
   }
   if (!snInstanceId) throw new Error(`The instance_id property on ${instance.host} is empty or unreadable — the console binds an instance by that value, not by hostname.`);
 
+  // The registry's refresh-token lifespan, when this admin's token could read
+  // it (ADR 0014 D2). It caps an MCP token's life at the first refresh, so we
+  // record it here and clamp at mint rather than letting a "30-day" token die
+  // in eight hours without explanation. Null when the field is absent — an
+  // older instance, or a read that did not return it.
+  const lifespan = Number(entity.refresh_token_lifespan);
+  const refreshLifespanS = Number.isFinite(lifespan) && lifespan > 0 ? Math.floor(lifespan) : null;
+
   try {
     await withOrg(ctx.orgId, async (c) => {
       await c.query(
         `UPDATE instances SET status = 'verified', instance_id = $2, verified_by_sys_id = $3, verified_by_user_name = $4,
-                verified_at = now(), oauth_entity_sys_id = $5, updated_at = now()
+                verified_at = now(), oauth_entity_sys_id = $5, refresh_token_lifespan_s = $6, updated_at = now()
           WHERE id = $1`,
-        [instanceId, snInstanceId, user?.sys_id || null, user?.user_name || null, entity.sys_id || null],
+        [instanceId, snInstanceId, user?.sys_id || null, user?.user_name || null, entity.sys_id || null, refreshLifespanS],
       );
       await c.query(
         `INSERT INTO instance_aliases (host, org_id, instance_id) VALUES ($1, current_setting('app.org_id')::uuid, $2)
@@ -423,6 +468,8 @@ export async function disconnectInstance(ctx, instanceId) {
     await c.query(`UPDATE instances SET status = 'disconnected', updated_at = now() WHERE id = $1`, [instanceId]);
     await c.query(`DELETE FROM instance_aliases WHERE instance_id = $1`, [instanceId]);
     await c.query(`UPDATE sessions SET revoke_on_present = true WHERE instance_id = $1`, [instanceId]);
+    // ADR 0014 D3: an MCP token names the instance it was minted against.
+    await c.query(`UPDATE mcp_tokens SET revoke_on_present = true WHERE instance_id = $1`, [instanceId]);
     return true;
   });
 }
@@ -517,6 +564,8 @@ export async function setMember(ctx, memberId, { status, role, actor }) {
     if (status === 'blocked') {
       // Revocation matrix (D8): a blocked member's sessions die on next presentation.
       await c.query(`UPDATE sessions SET revoke_on_present = true WHERE member_id = $1`, [memberId]);
+      // And their MCP tokens with them (ADR 0014 D3).
+      await c.query(`UPDATE mcp_tokens SET revoke_on_present = true WHERE member_id = $1`, [memberId]);
     }
     return rows[0] || null;
   });

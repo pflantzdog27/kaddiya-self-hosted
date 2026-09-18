@@ -134,8 +134,27 @@
           <option value="3600000">1 hour</option>
         </select>
         <div class="section-note">An absolute cap from sign-in, never extended by activity. Downward only.</div>
+
+        <label class="check-row"><input type="checkbox" id="a-mcp"> Allow members to connect MCP clients (read-only)</label>
+        <div class="section-note">A member can mint a token for an MCP host — Claude Code, Claude Desktop — that reads their ServiceNow instance as them, through the same twelve read tools the console agent uses. Nothing that writes is reachable: there is no card for a model to click. Every call is audited with the token's label, and each member authorizes on ServiceNow themselves. Turning this off revokes every token in the workspace. Off by default.</div>
+        <label class="mono-label" for="a-mcp-ttl">MCP token ceiling</label>
+        <select id="a-mcp-ttl" class="text-input">
+          <option value="">90 days (the maximum)</option>
+          <option value="2592000000">30 days</option>
+          <option value="604800000">7 days</option>
+          <option value="86400000">1 day</option>
+        </select>
+        <div class="section-note" id="a-mcp-lifespan">An absolute cap from the moment the token is minted. Downward only.</div>
+
         <div class="form-row"><button class="btn-primary" type="submit">Save access settings</button><span class="form-row-note" id="access-saved"></span></div>
       </form>
+    </section>
+
+    <!-- MCP tokens -->
+    <section class="step" id="sec-mcp">
+      <div class="step-head"><h2>MCP tokens</h2><span class="step-note" id="mcp-note"></span></div>
+      <p class="step-desc">Every live connection from an MCP client, whose it is, and when it was last used. Revoking one here takes effect on its next call, which also expires the ServiceNow token behind it. There is no way to read a token back — not for a member, and not for you.</p>
+      <div class="table-wrap"><table class="table" id="mcp-table"></table></div>
     </section>
 
     <section class="step" id="sec-branding">

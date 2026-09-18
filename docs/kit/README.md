@@ -24,6 +24,11 @@ user-delegated OAuth client.
 | 07 | [Service-account question](07-service-account-question.md) | Security governance | Why a user-delegated client is the right shape, and safer than a service account |
 | 08 | [Phishing-safe sign-in](08-phishing-safe-sign-in.md) | Security awareness / training | The sign-in pattern, stated so you can train against fakes |
 
+**The companion document.** This kit answers the platform owner's questions — what your
+instance will see, and what to approve. [Architecture](../architecture.md) answers the other
+half: how Kaddiya itself is built, where data lives, and what enforces the properties below.
+Hand the kit to the CAB; hand the architecture document to whoever reviews the software.
+
 ## The four properties every one of these documents rests on
 
 1. **Reads run as the signed-in user, on their own OAuth token.** Kaddiya contains no
@@ -38,7 +43,9 @@ user-delegated OAuth client.
    your agreement with that provider.
 4. **Every query is visible and logged** — on screen as it runs, in our audit log, and in your
    own `syslog_transaction` attributed to the human user. Your existing SIEM already sees
-   everything Kaddiya does.
+   everything Kaddiya does. Where a member has connected an MCP client (document 06), "on
+   screen" means in that client rather than in the Kaddiya console — the audit row and the
+   `syslog_transaction` entry are identical either way, and the row names the token.
 
 ## Precision on property 2 — read this before you quote us
 
@@ -47,8 +54,9 @@ authorization-code scope, so no OAuth client can honestly claim its token cannot
 
 The claim is narrower and checkable: *our build contains no code path that writes to your
 instance without a human clicking a button on the exact payload — and you can enforce the
-same limit at your own edge.* The write endpoints are enumerable, which is the point; there
-are three of them, listed in document 04 and in `apps/console/README.md`.
+same limit at your own edge.* The write endpoints are enumerable, which is the point; they
+are listed in document 04 and in `apps/console/README.md`, one per entry in
+`apps/console/server/actions.js`, and a test fails the build if that stops being true.
 
 ## What is not in v1, and when it arrives
 

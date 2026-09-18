@@ -164,9 +164,13 @@ export class SnClient {
     this.onTokensRefreshed = onTokensRefreshed;
     this.org = identity.org || cfg.org || 'self-hosted';
     this.userKey = identity.userKey || 'anonymous';
+    // Which surface the person is driving (ADR 0014 D6). The gate key
+    // deliberately does NOT include it: browser and MCP share the documented
+    // two-in-flight ceiling per user because they share `userKey`.
+    this.surface = identity.surface || 'console';
   }
 
-  /** Headers every instance call carries (ADR 0008 D14). */
+  /** Headers every instance call carries (ADR 0008 D14, ADR 0014 D6). */
   headers(extra = {}) {
     return {
       Authorization: `Bearer ${this.tokens.accessToken}`,
@@ -174,6 +178,7 @@ export class SnClient {
       'User-Agent': USER_AGENT,
       'X-Kaddiya-Org': headerSafe(this.org),
       'X-Kaddiya-User': headerSafe(this.userKey),
+      'X-Kaddiya-Surface': headerSafe(this.surface),
       ...extra,
     };
   }
@@ -419,7 +424,9 @@ export class SnClient {
   async readOAuthEntity(clientId) {
     const data = await this.get('/api/now/table/oauth_entity', {
       sysparm_query: `client_id=${clientId}`,
-      sysparm_fields: 'sys_id,name,client_id,redirect_url,active,type',
+      // The two lifespans ride along for ADR 0014 D2: the refresh-token
+      // lifespan is what an MCP token's expiry is clamped to.
+      sysparm_fields: 'sys_id,name,client_id,redirect_url,active,type,refresh_token_lifespan,access_token_lifespan',
       sysparm_limit: 1,
     });
     return data.result?.[0] ?? null;

@@ -26,7 +26,7 @@ actually protecting against:
 | Who is in the audit trail? | The service account. Tracing back to a person needs the vendor's own logs | The person. `sys_updated_by` and `syslog_transaction` name the human, in your tables |
 | What happens when someone leaves? | Nothing. The service account keeps working | They lose access with their ServiceNow account, through your existing joiner/leaver process |
 | Does MFA / SSO apply? | Usually not — service accounts bypass the IdP | Yes. Sign-in goes through your instance and therefore your IdP, SSO and MFA |
-| What is the blast radius of a stolen credential? | Everything the service account can reach, indefinitely | One user's own access, for at most 8 hours |
+| What is the blast radius of a stolen credential? | Everything the service account can reach, indefinitely | One user's own access. A browser session: at most 8 hours. An MCP token (document 06, off by default): read-only, up to the workspace ceiling an admin sets, revocable by that person and by any admin, and listed in Admin with its last-used time |
 | What has to be provisioned, monitored, rotated? | An account, its roles, its password or key | Nothing. One registry record |
 
 **A service account would make Kaddiya less safe, not more.** It would require creating a

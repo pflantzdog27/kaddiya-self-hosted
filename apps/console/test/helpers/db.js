@@ -34,7 +34,7 @@ after(async () => {
 
 const TABLES = [
   'usage_events', 'audit_events', 'notebook_entries', 'conversations', 'members',
-  'oauth_states', 'sessions', 'instance_aliases', 'instances', 'orgs', 'stripe_events',
+  'oauth_states', 'sessions', 'mcp_tokens', 'instance_aliases', 'instances', 'orgs', 'stripe_events',
 ];
 
 export async function resetDb() {

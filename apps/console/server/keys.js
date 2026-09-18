@@ -128,6 +128,16 @@ export function sessionKey(sidSecret) {
   return Buffer.from(crypto.hkdfSync('sha256', Buffer.from(sidSecret, 'utf8'), 'kaddiya-session', 'session-tokens', 32));
 }
 
+/**
+ * MCP-bearer custody (ADR 0014 D2): the same trick as sessionKey for a second
+ * credential kind. The salt and info differ, so a bearer and a cookie of
+ * identical bytes derive different keys and neither can open the other's
+ * ciphertext — test/mcp-tokens.test.js checks that direction.
+ */
+export function mcpTokenKey(bearer) {
+  return Buffer.from(crypto.hkdfSync('sha256', Buffer.from(bearer, 'utf8'), 'kaddiya-mcp', 'mcp-tokens', 32));
+}
+
 export function sealWithKey(key, aad, plaintext) {
   return seal(key, aad, Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(String(plaintext), 'utf8'));
 }

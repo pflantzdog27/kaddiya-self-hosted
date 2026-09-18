@@ -30,6 +30,16 @@ a bug on our side and should be refused on yours.
 Kaddiya does not call the Attachment API in this release. If your policy set is
 deny-by-default, there is nothing to allow for it.
 
+**MCP clients call these rows and no others.** When a member connects an MCP client
+(document 06, "MCP clients"), it reaches your instance through the same twelve read tools the
+console agent uses, so it produces exactly the GET traffic in the table above — plus the
+`sys_user`, `sys_user_grmember`, `sys_dictionary`, `sys_db_object`, `sys_journal_field`,
+`sys_update_xml`, `sys_update_set`, `sys_user_preference` and `sys_properties` reads those
+tools already make on the console surface. **The write table below is unchanged**: no
+proposal tool, and therefore no write path of any kind, is reachable from an MCP client.
+Option A below covers that surface completely, and is worth considering on its own merits if
+MCP is the only thing you are enabling.
+
 ### Writes — the catalog, and nothing else
 
 Normal mode requires a click on a card displaying the exact payload. Authorized task modes
@@ -73,6 +83,9 @@ nobody needs to send a reply or create a change yet.
 Allow GET on the Table and Aggregate APIs. Deny every other method for this client. Drafts and
 proposals still render — the human's click simply fails with a 403 from your instance, which
 is the platform refusing, exactly as intended.
+
+This option also makes the MCP surface's read-only guarantee yours rather than ours: Kaddiya
+exposes no write over MCP, and under Option A your instance would refuse one even if it did.
 
 ## Option B — GET plus the catalog's write paths (recommended)
 

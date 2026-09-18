@@ -141,3 +141,42 @@ test('partial saves stay saved and report warnings without inventing missing val
   created.markCommitted({ record: { name: 'Laptop' }, warnings: [warning] });
   assert.ok(created.innerHTML.includes(warning));
 });
+
+// ---- the update set package card (a download, not a write) ----
+
+const pkg = {
+  sys_id: '0'.repeat(31) + '3', update_set: 'KD: incident autoclose', state: 'Complete',
+  changes: 2, by_type: [{ type: 'Business Rule', count: 2 }],
+  bytes: 8400, sha256: 'a'.repeat(64), warnings: [],
+  filenames: { xml: 'kd-incident-autoclose.xml', ledger: 'kd-incident-autoclose-ledger.md' },
+};
+
+test('the package card offers two same-origin downloads and posts nothing', () => {
+  const { context, requests } = frontend();
+  const card = context.makePackageCard(pkg);
+  // No button, no commit: the changes in the file were approved when they were
+  // committed, and the package only reads them back.
+  assert.equal(requests.length, 0);
+  assert.match(card.innerHTML, /2 changes · 8 KB/);
+  assert.match(card.innerHTML, /2 × Business Rule/);
+  // The card shows what a fulfiller can act on. The hash identifies the file
+  // for whoever loads it, so it lives in the ledger that travels with it and
+  // in the audit row — not on the front of the card.
+  assert.ok(!card.innerHTML.includes(pkg.sha256.slice(0, 16)), 'the hash belongs in the ledger, not the card');
+
+  const hrefs = [...card.innerHTML.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(hrefs, [
+    `/api/update-set/${pkg.sys_id}/package.md`,
+    `/api/update-set/${pkg.sys_id}/package.xml`,
+  ]);
+  // Same-origin paths built from the sys_id, never a URL the model chose.
+  for (const href of hrefs) assert.match(href, /^\/api\/update-set\/[0-9a-f]{32}\/package\.(xml|md)$/);
+});
+
+test('a package warning reaches the card, escaped', () => {
+  const { context } = frontend();
+  const card = context.makePackageCard({ ...pkg, update_set: '<img src=x>', warnings: ['This set is "In progress", not Complete.'] });
+  assert.match(card.innerHTML, /not Complete/);
+  assert.ok(!card.innerHTML.includes('<img src=x>'), 'the set name is instance content and is escaped');
+  assert.match(card.innerHTML, /&lt;img src=x&gt;/);
+});

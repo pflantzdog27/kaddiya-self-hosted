@@ -10,6 +10,7 @@ import { detectRelease, searchDocs, getDoc, SUPPORTED_FAMILIES } from './docs.js
 import { saveNote, notesForPrompt } from './notebook.js';
 import { proposalTools, actionById } from './actions.js';
 import { scriptProblems } from './commits.js';
+import { buildUpdateSetPackage } from './update-set-package.js';
 import { nextStepStream, stripNextStep } from './nextstep.js';
 import crypto from 'node:crypto';
 
@@ -17,6 +18,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SYSTEM_TEMPLATE = fs.readFileSync(path.join(__dirname, 'prompts', 'system.md'), 'utf8');
 
 const MAX_LOOP_ITERATIONS = 12;
+
+// What a package returns to the model: enough to describe the deliverable,
+// bounded well under the smallest maxToolResultChars (12k) so the result is
+// never the thing that gets truncated.
+const MAX_PACKAGE_ITEMS = 40;
+const MAX_PACKAGE_LEDGER_CHARS = 6000;
 
 // One SDK client per credential (ADR 0008 D9): the org's own key or gateway
 // when it has one, the labelled trial key otherwise, the environment on a
@@ -228,6 +235,19 @@ export function toolDefinitions(actionsTiers) {
       },
     },
     {
+      name: 'sn_package_update_set',
+      description:
+        'Package an update set as the two files a person can hand over: the loadable ServiceNow XML and a markdown ledger of what is in it. THIS READS ONLY — it calls the Table API for the set and its captured changes and writes nothing. The changes must already be captured in the set; packaging never creates them. Use it when the work is done and the user wants to promote it to another instance, attach it to a change request, or hand it to a client. The result carries the manifest and the ledger, never the XML itself: say what is in the package and give the user the download path it returns. Refuses the Default set, an empty set, and a set too large for one file, and warns when the set is still in progress or part of a batch.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          sys_id: { type: 'string', description: 'Update set sys_id; omit for the current set' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    {
       name: 'sn_docs_search',
       description:
         "Full-text search of the official ServiceNow documentation pinned to THIS instance's release family. Use it for platform behaviour, API and syntax questions, and before proposing configuration changes, so the answer matches the release actually running — not memory of another version. Returns matching topics; read one with sn_docs_get and cite its path or url in your answer.",
@@ -386,6 +406,42 @@ export async function executeTool(sn, name, input, emit, ctx = {}) {
     case 'sn_update_set': return sn.currentUpdateSet();
     case 'sn_update_set_contents': return sn.updateSetContents(input);
 
+    // Reads the set and its captured changes, formats two files, writes
+    // nothing. The files themselves do not come back here: the XML is far
+    // over any model's tool-result ceiling, and a truncated package is a
+    // file that loads and silently omits half the work. The browser gets a
+    // card with the download; the model gets the shape and the hash.
+    case 'sn_package_update_set': {
+      const pkg = await buildUpdateSetPackage(sn, { sys_id: input.sys_id, actor: ctx.user?.user_name });
+      emit('package', {
+        sys_id: pkg.manifest.sys_id,
+        update_set: pkg.manifest.update_set,
+        state: pkg.manifest.state,
+        changes: pkg.manifest.changes,
+        by_type: pkg.manifest.by_type,
+        bytes: pkg.bytes,
+        sha256: pkg.sha256,
+        warnings: pkg.warnings,
+        filenames: pkg.filenames,
+      });
+      const items = pkg.manifest.items.slice(0, MAX_PACKAGE_ITEMS);
+      return {
+        ...pkg.manifest,
+        items,
+        ...(items.length < pkg.manifest.items.length
+          ? { items_truncated: `showing ${items.length} of ${pkg.manifest.items.length}; the package and its ledger hold them all` }
+          : {}),
+        ledger: pkg.ledger.length <= MAX_PACKAGE_LEDGER_CHARS ? pkg.ledger : undefined,
+        // Relative for the browser, which is already on this origin;
+        // absolute for a host that is not "on" anything (ADR 0014 D9).
+        download: {
+          xml: `${ctx.consoleUrl || ''}/api/update-set/${pkg.manifest.sys_id}/package.xml`,
+          ledger: `${ctx.consoleUrl || ''}/api/update-set/${pkg.manifest.sys_id}/package.md`,
+        },
+        note: 'The package is on screen with download buttons; nothing was written to the instance. Loading it on a target instance is the person\'s step: Retrieved Update Sets → Import Update Set from XML → Preview → Commit.',
+      };
+    }
+
     // Was an autonomous instance write until ADR 0008 D12; now a proposal card
     // like every other write in the catalog (ADR 0009 D2).
     case 'sn_propose_update_set': {
@@ -491,6 +547,7 @@ function summarize(name, result) {
   if (name === 'sn_update_set') return result.current?.name || 'none selected';
   if (name === 'sn_propose_update_set') return 'proposal — awaiting your approval';
   if (name === 'sn_update_set_contents') return `${result.entries?.length ?? 0} captured change(s)`;
+  if (name === 'sn_package_update_set') return `${result.changes ?? 0} change(s) · ${Math.max(1, Math.round((result.bytes || 0) / 1024))} KB`;
   if (name === 'sn_docs_search') return `${result.results?.length ?? 0} topics · ${result.family}`;
   if (name === 'sn_docs_get') return `${Math.max(1, Math.round((result.chars || 0) / 1000))}k chars · ${result.family}`;
   if (name === 'sn_note_save') return result.status === 'already_kept' ? 'already kept' : 'note — awaiting your approval';

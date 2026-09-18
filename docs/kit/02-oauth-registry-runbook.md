@@ -31,7 +31,36 @@ API endpoint for external clients.**
 | Field | Recommended | Why |
 |---|---|---|
 | **Access token lifespan** | `1800` (the default, 30 min) | Short-lived by design. Kaddiya honors the `expires_in` the token endpoint returns rather than assuming a value, so lowering this is safe. |
-| **Refresh token lifespan** | `28800` (8 hours) — **not the 8,640,000-second default** | The default is 100 days. Kaddiya never keeps a token past the user's session and enforces an absolute 8-hour session ceiling, so an 8-hour refresh lifespan matches the product's real behavior and removes a 100-day credential from your risk register. Raise it only if your session policy is longer. |
+| **Refresh token lifespan** | `28800` (8 hours) — **not the 8,640,000-second default** | The default is 100 days. For the browser console, Kaddiya never keeps a token past the user's session and enforces an absolute 8-hour session ceiling, so an 8-hour refresh lifespan matches the product's real behavior and removes a 100-day credential from your risk register. Raise it only if your session policy is longer, **or if you enable MCP access — see below**. |
+
+#### If you enable MCP access
+
+MCP tokens (document 06, "MCP clients") are deliberately longer-lived than a browser session:
+a member mints one, pastes it into their client's config, and expects it to keep working for
+days. That token is backed by its own ServiceNow refresh token, obtained through a second
+authorization-code grant, and **this field caps it**. With the recommended 28,800 seconds, a
+token a member asks to last 30 days stops working after 8 hours, at its first refresh.
+
+Kaddiya does not paper over this. It reads *Refresh token lifespan* back from this record when
+an admin verifies the instance, clamps every minted token to it, and tells the member on the
+screen where their token is shown: *"shortened by your instance's OAuth refresh-token
+lifespan."*
+
+So this is your decision to make, not ours:
+
+- **Leave it at 28,800 and enable MCP anyway.** Members re-authorize their client every 8
+  hours. Tightest posture; most friction.
+- **Raise it to match the MCP token lifetime you are willing to accept** (the workspace
+  ceiling is configurable under Admin → Access, from a hard maximum of 90 days). Then
+  **re-verify the instance** from Admin → Instances, or Kaddiya keeps clamping to the old
+  value — the field is only read at verification.
+- **Leave MCP turned off.** It is off by default and nothing changes.
+
+If you raise it, weigh the same thing you weighed the first time: this is a credential that
+lives on a member's laptop for as long as you allow. What it can do there is read-only and
+bounded by that member's own ACLs (document 06), and it is revocable by them and by an admin
+at any time — but it is a longer-lived credential than a browser session, and it belongs on
+the risk register as one.
 | **Token Format** | `Opaque` (default) or `JWT` | Kaddiya treats the token as opaque either way. |
 | **Enforce token restriction** | See [document 04](04-rest-api-access-policy.md) | Leave **unchecked** for the first sign-in. Turn it on only together with the API access policies in document 04 — on its own it will lock the client out of everything. |
 | **Logo URL** | optional | Shown on the consent screen. Helps users recognize a genuine prompt. |

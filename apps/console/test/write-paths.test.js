@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 import { toolDefinitions } from '../server/agent.js';
 import { ACTIONS, CONFIG_TABLES, TIERS, endpoints, proposalTools, writableTables } from '../server/actions.js';
+import { MCP_TOOLS, listTools } from '../server/mcp.js';
 
 const SERVER = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server');
 const read = (f) => fs.readFileSync(path.join(SERVER, f), 'utf8');
@@ -36,6 +37,7 @@ const READ_TOOLS = [
   'sn_list_tables',
   'sn_my_work',
   'sn_note_save',
+  'sn_package_update_set',
   'sn_query',
   'sn_record',
   'sn_schema',
@@ -76,6 +78,16 @@ const CONSOLE_LOCAL_ENDPOINTS = [
   'POST /api/admin/models',
   'POST /api/admin/instances/:id/credentials',
   'POST /api/admin/instances/:id/disconnect',
+  // ADR 0014: the MCP surface. POST /mcp is the JSON-RPC endpoint, and every
+  // method reachable through it is a read — tools/call dispatches only through
+  // MCP_TOOLS, which the test below pins as a subset of READ_TOOLS. The other
+  // two are rows in the workspace database: one shows a bearer to the browser
+  // that minted it, the other marks a row for revocation. Neither calls the
+  // instance. This is the procedure this file's own header prescribes, and the
+  // verdict above is unchanged: the write surface is the catalog and nothing else.
+  'POST /mcp',
+  'POST /api/mcp/tokens/:id/reveal',
+  'POST /api/mcp/tokens/:id/revoke',
 ];
 
 // Every SnClient method that mutates the instance, and the raw verbs they are
@@ -97,12 +109,19 @@ const MUTATORS = [
 ];
 
 test('the agent tool loop cannot reach any instance write', () => {
-  const agent = read('agent.js');
-  for (const mutator of MUTATORS) {
-    assert.ok(
-      !agent.includes(mutator),
-      `server/agent.js references ${mutator}. The agent proposes writes; it never performs them (ADR 0009 D2).`,
-    );
+  // Three files now reach the tool loop: agent.js, which the console drives,
+  // mcp.js, which an external host drives (ADR 0014), and
+  // update-set-package.js, which agent.js calls for sn_package_update_set.
+  // None may contain a write — mcp.js calls executeTool, never an SnClient
+  // mutator, and the packager only ever GETs the set and its entries.
+  for (const file of ['agent.js', 'mcp.js', 'update-set-package.js']) {
+    const source = read(file);
+    for (const mutator of MUTATORS) {
+      assert.ok(
+        !source.includes(mutator),
+        `server/${file} references ${mutator}. The agent proposes writes; it never performs them (ADR 0009 D2).`,
+      );
+    }
   }
   // The catalog itself is pure: it names endpoints, it does not implement them.
   const actions = read('actions.js');
@@ -125,6 +144,39 @@ test('the tool catalog is exactly the read tools plus the action catalog', () =>
   );
   for (const name of READ_TOOLS) {
     assert.ok(!name.startsWith('sn_propose_'), `${name} is listed as a read tool but named as a proposal`);
+  }
+});
+
+// ADR 0014 D1. The MCP surface is defined by exclusion from server/actions.js,
+// and this is where that claim is checked: one exported list, a subset of the
+// read tools, with the same schemas the console's model sees.
+test('the MCP surface is a subset of the read tools, and nothing else', () => {
+  const consoleTools = new Map(toolDefinitions().map((t) => [t.name, t]));
+
+  for (const name of MCP_TOOLS) {
+    assert.ok(READ_TOOLS.includes(name), `${name} is exposed over MCP but is not a read tool`);
+    assert.ok(!name.startsWith('sn_propose_'), `${name} is a proposal and must not be exposed over MCP`);
+  }
+  assert.ok(!MCP_TOOLS.includes('sn_note_save'),
+    'sn_note_save writes the console notebook behind a keep/discard card nobody can click over MCP');
+  assert.equal(new Set(MCP_TOOLS).size, MCP_TOOLS.length, 'a name appears once');
+  // The one read tool deliberately left out, and no more than that.
+  assert.deepEqual(READ_TOOLS.filter((n) => !MCP_TOOLS.includes(n)), ['sn_note_save']);
+
+  const exposed = listTools();
+  assert.deepEqual(exposed.map((t) => t.name), [...MCP_TOOLS], 'the wire list is MCP_TOOLS, in order');
+  for (const tool of exposed) {
+    // The schema is the console's, passed through: a reviewer comparing the
+    // two surfaces compares one definition, not two that may drift.
+    assert.deepEqual(tool.inputSchema, consoleTools.get(tool.name).input_schema,
+      `${tool.name}: the MCP schema must be the console's own, verbatim`);
+    assert.equal(tool.annotations.readOnlyHint, true, `${tool.name} must carry readOnlyHint`);
+    assert.equal(tool.annotations.destructiveHint, false);
+    // A description that mentions a card, a side panel or proposing describes
+    // console furniture the host does not have, and would mislead its model.
+    for (const word of [/side panel/i, /\bcards?\b/i, /propos/i]) {
+      assert.doesNotMatch(tool.description, word, `${tool.name}: the MCP description describes the console, not this surface`);
+    }
   }
 });
 

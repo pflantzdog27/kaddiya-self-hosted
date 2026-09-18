@@ -123,6 +123,39 @@ test('join policy: approve queue by default, auto-join when set, external denied
   assert.equal(approved.approved_by, 'owner.door');
   const blocked = await tenancy.setMember(a.ctx, approved.id, { status: 'blocked' });
   assert.equal(blocked.status, 'blocked');
+  // The same revocation matrix now covers MCP tokens (ADR 0014 D3).
+  const marked = await system((c) => c.query(
+    `SELECT revoke_on_present FROM mcp_tokens WHERE member_id = $1`, [approved.id],
+  ));
+  assert.ok(marked.rows.every((r) => r.revoke_on_present), 'a blocked member’s MCP tokens are marked for revocation');
+});
+
+test('block and disconnect mark MCP tokens beside the sessions they already marked', async () => {
+  const a = await seedOrg('revocation');
+  const sessions = await import('../server/sessions.js');
+  const tokens = { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3600_000 };
+  const mint = () => sessions.createMcpToken({
+    orgId: a.org.id, instanceId: a.instance.id, memberId: a.ownerMember.id,
+    userSysId: a.owner.sys_id, user: a.owner, label: 'client', tokens, ttlMs: 3600_000,
+  });
+  const flag = async (id) => (await system((c) => c.query('SELECT revoke_on_present FROM mcp_tokens WHERE id = $1', [id]))).rows[0]?.revoke_on_present;
+
+  const onBlock = await mint();
+  await tenancy.setMember(a.ctx, a.ownerMember.id, { status: 'blocked' });
+  assert.equal(await flag(onBlock.id), true, 'setMember(blocked) marks the token');
+  await tenancy.setMember(a.ctx, a.ownerMember.id, { status: 'active', actor: 'test' });
+
+  const onDisconnect = await mint();
+  await tenancy.disconnectInstance(a.ctx, a.instance.id);
+  assert.equal(await flag(onDisconnect.id), true, 'disconnectInstance() marks the token');
+
+  // Both statements ride inside withOrg, so neither can reach another org.
+  const b = await seedOrg('revocation-other');
+  const untouched = await sessions.createMcpToken({
+    orgId: b.org.id, instanceId: b.instance.id, memberId: b.ownerMember.id,
+    userSysId: b.owner.sys_id, user: b.owner, label: 'client', tokens, ttlMs: 3600_000,
+  });
+  assert.equal(await flag(untouched.id), false, "another org's tokens are untouched");
 });
 
 test('org settings only move the session ceiling downward and keep tiers sane', async () => {
