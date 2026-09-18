@@ -55,6 +55,13 @@ const CONSOLE_LOCAL_ENDPOINTS = [
   'POST /api/conversations',
   'POST /api/notebook/discard',
   'POST /api/notebook/keep',
+  // The artifact workspace: an output is rows in this workspace's own
+  // database and bytes this console already had. "Save as document" is the
+  // one mutating route — the model's own create/revise go through
+  // server/outputs.js directly, never through an HTTP endpoint, and the read
+  // and download routes are GETs. None of them reaches the instance, and
+  // none of them is exposed to an MCP bearer (asserted below).
+  'POST /api/conversations/:id/outputs',
   'POST /auth/logout',
   // Org setup, admin and billing (ADR 0008 D2/D17, Phases 2–3): rows in the
   // workspace database, never a call to the instance.

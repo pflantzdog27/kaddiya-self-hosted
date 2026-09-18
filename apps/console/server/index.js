@@ -20,6 +20,7 @@ import { audit, listAudit } from './audit.js';
 import { commit, CommitError } from './commits.js';
 import { buildUpdateSetPackage, packageResponse, PackageError } from './update-set-package.js';
 import * as runs from './runs.js';
+import * as outputs from './outputs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -709,6 +710,143 @@ app.delete('/api/conversations/:id', async (req, res) => {
   if (!session) return;
   res.json({ ok: await store.deleteConversation(session.scope, req.params.id) });
 });
+
+// ---- the work pane's files (spec §7) ----
+//
+// An output is console-local: rows in this workspace's own database, never a
+// call to the instance and never a file on disk. These five routes are the
+// only way one reaches a browser, and every one of them re-derives the tenant
+// from the session cookie — the id in the path is a claim, not a credential.
+//
+// A denied id and an unknown id answer the same 404 on purpose: a signed-in
+// caller must not be able to enumerate another member's files by watching
+// which guesses return 403.
+const OUTPUT_ERROR_STATUS = {
+  invalid: 400, not_found: 404, conflict: 409, duplicate_operation: 409,
+  busy: 409, lease_lost: 409, quota: 409, too_large: 413,
+};
+
+function outputFailed(res, err) {
+  const status = OUTPUT_ERROR_STATUS[err?.code] || 500;
+  if (status === 500) console.error('output store failed:', err);
+  res.status(status).json({ error: status === 500 ? 'Could not save that file.' : String(err.message), code: err?.code || 'error' });
+}
+
+/** Metadata and bodies are private to one signed-in person; nothing caches them. */
+function noStore(res) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+}
+
+app.get('/api/conversations/:id/outputs', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  noStore(res);
+  const page = await outputs.listOutputs(session.scope, req.params.id, {
+    cursor: req.query.cursor ? String(req.query.cursor).slice(0, 400) : null,
+    limit: req.query.limit,
+  });
+  res.json(page);
+});
+
+// "Save as document": the person turns a reply they can already read into a
+// file they can keep. The same service, the same limits and the same audit as
+// the model's own tool — no second model call, and no second write path.
+app.post('/api/conversations/:id/outputs', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  const body = req.body || {};
+  try {
+    const { reference, metadata, replayed } = await outputs.createOutput(session.scope, {
+      conversationId: req.params.id,
+      title: body.title,
+      filename: body.filename || body.title,
+      format: body.format,
+      language: body.language,
+      content: body.content,
+      operationId: body.operation_id,
+      actorKind: 'user',
+      provenance: { origin: 'user' },
+    });
+    await auditOutput(session, 'output_create', reference, { actor: 'user', replayed });
+    noStore(res);
+    res.json({ ...reference, metadata });
+  } catch (err) {
+    await auditOutput(session, 'output_create', { format: body.format }, { actor: 'user', error: err });
+    outputFailed(res, err);
+  }
+});
+
+app.get('/api/outputs/:id', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  const revision = req.query.revision == null ? null : Number(req.query.revision);
+  const found = await outputs.readOutput(session.scope, req.params.id, { revision });
+  if (!found) return res.status(404).json({ error: 'not found' });
+  noStore(res);
+  res.json(found);
+});
+
+app.get('/api/outputs/:id/revisions', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  const list = await outputs.listRevisions(session.scope, req.params.id, {
+    cursor: req.query.cursor ? String(req.query.cursor).slice(0, 40) : null,
+    limit: req.query.limit,
+  });
+  if (!list) return res.status(404).json({ error: 'not found' });
+  noStore(res);
+  res.json(list);
+});
+
+// The download. The bytes are the exact stored revision, not a re-render of
+// it: what the person is reading is what lands in their Downloads folder, and
+// it still works after a reload because it was never an in-memory Blob.
+//
+// `revision` is required rather than defaulting to the head — a download is a
+// hand-over, and "the latest at the moment you clicked" is not a version
+// anyone can cite later.
+app.get('/api/outputs/:id/download', async (req, res) => {
+  const session = await requireActive(req, res);
+  if (!session) return;
+  const revision = Number(req.query.revision);
+  if (!Number.isInteger(revision) || revision < 1) return res.status(400).json({ error: 'a version number is required' });
+  const found = await outputs.readOutput(session.scope, req.params.id, { revision });
+  if (!found) return res.status(404).json({ error: 'not found' });
+
+  const bytes = Buffer.from(found.content, 'utf8');
+  const ascii = outputs.asciiFilename(found.filename);
+  noStore(res);
+  res.setHeader('Content-Type', outputs.contentTypeFor(found.format));
+  // Attachment always, with the RFC 5987 form beside the ASCII fallback: a
+  // generated .html or .svg is a file to keep, never a document this origin
+  // renders. Both forms are sanitised before they reach a header.
+  res.setHeader('Content-Disposition',
+    `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(found.filename)}`);
+  res.setHeader('Content-Length', String(bytes.length));
+  await auditOutput(session, 'output_download', found, { actor: 'user' });
+  res.end(bytes);
+});
+
+/**
+ * The audit row for an output operation: ids, shape and outcome, never the
+ * document. A generic tool audit would carry the whole body into a row and a
+ * log line; this is the redacted shape everything uses instead (spec §6).
+ */
+function auditOutput(session, action, ref, { actor = 'assistant', conversation, error, replayed } = {}) {
+  return audit(session.scope, {
+    user: session.user?.user_name,
+    action,
+    conversation: conversation || ref?.conversation_id,
+    output_id: ref?.output_id,
+    revision: ref?.revision,
+    format: ref?.format,
+    bytes: ref?.byte_length,
+    actor,
+    replayed: replayed || undefined,
+    error: error ? (error.code || 'error') : undefined,
+  });
+}
 
 // One staged execution per signed-in person/instance prevents concurrent writes
 // from racing each other (notably ServiceNow's current update set).
