@@ -336,6 +336,57 @@ test('a long conversation keeps its whole transcript, and its oldest file', asyn
   }
 });
 
+test('a turn that fails before the tool runs leaves no file behind', async () => {
+  const conv = await app.json(await app.post('/api/conversations', {}));
+  // A refusal the SDK does not retry (it does retry 5xx, which is why this is
+  // a 400): generation is interrupted before anything could have been written.
+  provider.push({ status: 400, error: 'the model endpoint refused this request' });
+  const events = await drain(await app.post('/api/chat', { message: 'Write me a document.', conversation_id: conv.id }));
+
+  assert.ok(eventsOf(events, 'error').length, 'the failure is reported, not swallowed');
+  assert.equal(eventsOf(events, 'output_saved').length, 0);
+  const list = await app.json(await app.get(`/api/conversations/${conv.id}/outputs`));
+  assert.equal(list.outputs.length, 0, 'no half-written file, and no file claimed in error');
+});
+
+test('a browser that disconnects after the commit still finds the file waiting', async () => {
+  const conv = await app.json(await app.post('/api/conversations', {}));
+  const call = toolCall('workspace_create_output', {
+    title: 'Survives the drop', filename: 'survives the drop',
+    format: 'markdown', content: '# Survives\n\nCommitted before the browser went away.\n',
+  });
+  // Commit on the first provider turn, then stall — so the disconnect lands
+  // after the write and before the reply could be delivered.
+  provider.push({ text: 'Saving.', tools: [call] }, { text: 'Done.', delayMs: 1500 });
+
+  const controller = new AbortController();
+  const request = fetch(`${app.base}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: `sid=${sid}`, origin: app.base },
+    body: JSON.stringify({ message: 'Write that up.', conversation_id: conv.id }),
+    signal: controller.signal,
+  }).catch(() => null);
+  await new Promise((r) => setTimeout(r, 700));   // past the commit, inside the stall
+  controller.abort();
+  await request;
+
+  // Nothing is regenerated to find out what happened: the list is asked.
+  await new Promise((r) => setTimeout(r, 1200));
+  const list = await app.json(await app.get(`/api/conversations/${conv.id}/outputs`));
+  assert.equal(list.outputs.length, 1, 'the committed file is recoverable');
+  assert.equal(list.outputs[0].title, 'Survives the drop');
+  const download = await app.get(`/api/outputs/${list.outputs[0].output_id}/download?revision=1`);
+  assert.equal(download.status, 200);
+  assert.match(await download.text(), /Committed before the browser went away/);
+
+  // And the conversation is free for the next turn: the lease was released.
+  provider.push({ text: 'Ready.' });
+  const next = await app.post('/api/chat', { message: 'Still there?', conversation_id: conv.id });
+  assert.equal(next.status, 200);
+  const events = await drain(next);
+  assert.equal(eventsOf(events, 'error').length, 0, 'no stale lease blocks the next turn');
+});
+
 test('the audit records the save by shape, and never the document', async () => {
   const audit = await app.json(await app.get('/api/admin/audit'));
   const rows = (audit.events || audit).filter?.((e) => /workspace|tool_call/.test(e.action || '')) || [];

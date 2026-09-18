@@ -319,6 +319,29 @@ test('the turn lease is the arbiter across processes, and an expired holder cann
   await outputs.releaseTurn(a.scope, a.conv.id, third.leaseId);
 });
 
+test('losing the org key makes content unreadable, exactly as crypto-shredding promises', async () => {
+  const a = await workspace('acme-shred');
+  const { reference } = await outputs.createOutput(a.scope, {
+    conversationId: a.conv.id, title: 'Shreddable', filename: 'shreddable', format: 'markdown',
+    content: 'the contents of this file', operationId: op('c'),
+  });
+  assert.ok(await outputs.readOutput(a.scope, reference.output_id), 'readable with the org key');
+
+  // The same org row with a different wrapped key: what an operator has after
+  // a key is destroyed, or what another tenant's context would present.
+  const { OrgContext, newWrappedDek } = await import('../server/keys.js');
+  const strangerCtx = new OrgContext({ ...a.org, dek_wrapped: newWrappedDek(a.org.id), key_version: 99 });
+  const strangerScope = { ...a.scope, ctx: strangerCtx };
+  assert.equal(await outputs.readOutput(strangerScope, reference.output_id), null,
+    'the row is still there; the content is not recoverable');
+  assert.equal((await outputs.listOutputs(strangerScope, a.conv.id)).outputs.length, 0,
+    'and it cannot be listed by title either, because the title is in the blob');
+  // The revision is still countable — deletion is a separate act from shredding.
+  const versions = await outputs.listRevisions(strangerScope, reference.output_id);
+  assert.equal(versions.revisions.length, 1);
+  assert.equal(versions.revisions[0].title, null, 'listed by number, with nothing readable in it');
+});
+
 test('a conversation deleted mid-flight leaves no orphan and recreates nothing', async () => {
   const a = await workspace('acme-cascade');
   await outputs.createOutput(a.scope, {
