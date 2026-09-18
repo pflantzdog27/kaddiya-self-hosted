@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 496" width="1000" height="496" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6373"/>
+    </marker>
+  </defs>
+
+  <text x="16" y="28" font-size="15" font-weight="600" fill="#14161a">Two doors to the database, and three layers of key</text>
+
+  <!-- doors -->
+  <rect x="16" y="52" width="470" height="150" rx="8" fill="#fff" stroke="#14161a" stroke-width="1.5"/>
+  <text x="34" y="78" font-size="13.5" font-weight="600" fill="#14161a">withOrg(orgId, fn) — the door for everything with a session behind it</text>
+  <text x="34" y="100" font-size="12" fill="#5b6373">Opens a transaction, drops to the <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">kaddiya_app</tspan> role (NOBYPASSRLS), pins</text>
+  <text x="34" y="119" font-size="12" fill="#5b6373"><tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">app.org_id</tspan>. Every tenant policy reads that setting, so a query in here</text>
+  <text x="34" y="138" font-size="12" fill="#5b6373">cannot reach another org's rows even if the SQL forgets its WHERE clause.</text>
+  <text x="34" y="164" font-size="12" fill="#5b6373">The setting is absent outside this door, and the policy <tspan font-style="italic">raises</tspan> rather than</text>
+  <text x="34" y="183" font-size="12" fill="#5b6373">returning empty — a stray query errors instead of leaking.</text>
+
+  <rect x="514" y="52" width="470" height="150" rx="8" fill="#f6f7f9" stroke="#c3cad6"/>
+  <text x="532" y="78" font-size="13.5" font-weight="600" fill="#14161a">system(fn) — only before a tenant is known</text>
+  <text x="532" y="100" font-size="12" fill="#5b6373">Which org owns this hostname? Which session does this cookie name?</text>
+  <text x="532" y="119" font-size="12" fill="#5b6373">Which org does this MCP bearer belong to? Creating an org.</text>
+  <text x="532" y="145" font-size="12" fill="#5b6373">Four modules may call it: <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">db</tspan>, <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">tenancy</tspan>, <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">sessions</tspan>, <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">billing</tspan>.</text>
+  <text x="532" y="164" font-size="12" fill="#5b6373">A test greps the whole server for <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">system(</tspan> and fails the build if it</text>
+  <text x="532" y="183" font-size="12" fill="#5b6373">appears anywhere else.</text>
+
+  <!-- tables -->
+  <rect x="16" y="230" width="470" height="118" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="34" y="256" font-size="13" font-weight="600" fill="#14161a">FORCE row-level security — tenant rows</text>
+  <text x="34" y="278" font-size="12" fill="#5b6373">conversations · notebook_entries · audit_events · usage_events · members</text>
+  <text x="34" y="300" font-size="12" fill="#5b6373">Subject to the policy even for the table owner. On <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">audit_events</tspan> the app</text>
+  <text x="34" y="319" font-size="12" fill="#5b6373">role additionally has UPDATE and DELETE revoked: the console can write its</text>
+  <text x="34" y="338" font-size="12" fill="#5b6373">own history and never rewrite it.</text>
+
+  <rect x="514" y="230" width="470" height="118" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="532" y="256" font-size="13" font-weight="600" fill="#14161a">ENABLE row-level security — directory rows</text>
+  <text x="532" y="278" font-size="12" fill="#5b6373">orgs · instances · instance_aliases · sessions · oauth_states · mcp_tokens</text>
+  <text x="532" y="300" font-size="12" fill="#5b6373">The app role is confined to its org by the same policy; the owner role can</text>
+  <text x="532" y="319" font-size="12" fill="#5b6373">resolve a hostname, a cookie or a bearer before any org is known — which is</text>
+  <text x="532" y="338" font-size="12" fill="#5b6373">the one thing it exists to do.</text>
+
+  <!-- keys -->
+  <rect x="16" y="376" width="968" height="104" rx="8" fill="#f6f7f9" stroke="#c3cad6"/>
+  <text x="34" y="400" font-size="13" font-weight="600" fill="#14161a">Three keys, none of which the database holds</text>
+  <text x="34" y="423" font-size="12" fill="#5b6373"><tspan font-weight="600" fill="#14161a">A master key</tspan> (env var, file, or KMS) wraps <tspan font-weight="600" fill="#14161a">a per-org data key</tspan>, which seals tenant content with AAD <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">org_id:column</tspan>.</text>
+  <text x="34" y="442" font-size="12" fill="#5b6373">Ciphertext written for one org cannot be opened in another's request, and a blob from one column cannot be read as another.</text>
+  <text x="34" y="465" font-size="12" fill="#5b6373"><tspan font-weight="600" fill="#14161a">ServiceNow tokens are sealed separately</tspan>, under <tspan font-family="ui-monospace, Menlo, monospace" fill="#14161a">HKDF(the credential that fetched them)</tspan> — so the org key alone opens nothing.</text>
+</svg>

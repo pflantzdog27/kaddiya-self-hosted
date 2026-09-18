@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" width="1000" height="440" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6373"/>
+    </marker>
+    <marker id="wg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1d6b46"/>
+    </marker>
+    <marker id="wx" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="8" markerHeight="8">
+      <path d="M2,2 L8,8 M8,2 L2,8" stroke="#b03030" stroke-width="1.6" fill="none"/>
+    </marker>
+  </defs>
+
+  <text x="16" y="28" font-size="15" font-weight="600" fill="#14161a">How a change reaches the instance</text>
+
+  <!-- model -->
+  <rect x="16" y="54" width="180" height="76" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="32" y="80" font-size="13.5" font-weight="600" fill="#14161a">The model</text>
+  <text x="32" y="100" font-size="11.5" fill="#5b6373">calls sn_propose_*</text>
+  <text x="32" y="118" font-size="11.5" fill="#5b6373">9 tools, one per action</text>
+
+  <!-- server: builds card -->
+  <rect x="246" y="54" width="200" height="76" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="262" y="80" font-size="13.5" font-weight="600" fill="#14161a">Kaddiya validates</text>
+  <text x="262" y="100" font-size="11.5" fill="#5b6373">live schema, allow-listed</text>
+  <text x="262" y="118" font-size="11.5" fill="#5b6373">table, tier enabled?</text>
+
+  <!-- card -->
+  <rect x="496" y="46" width="216" height="92" rx="8" fill="#fff" stroke="#1d6b46" stroke-width="1.5"/>
+  <text x="512" y="72" font-size="13.5" font-weight="600" fill="#14161a">A card, on screen</text>
+  <text x="512" y="92" font-size="11.5" fill="#5b6373">the exact payload, in full</text>
+  <text x="512" y="110" font-size="11.5" fill="#5b6373">tier 3: the approver types</text>
+  <text x="512" y="128" font-size="11.5" fill="#5b6373">the record name first</text>
+
+  <!-- human -->
+  <rect x="762" y="54" width="222" height="76" rx="8" fill="#fff" stroke="#1d6b46" stroke-width="1.5"/>
+  <text x="778" y="80" font-size="13.5" font-weight="600" fill="#1d6b46">A person clicks</text>
+  <text x="778" y="100" font-size="11.5" fill="#5b6373">this click is the authorization,</text>
+  <text x="778" y="118" font-size="11.5" fill="#5b6373">and the only one there is</text>
+
+  <line x1="196" y1="92" x2="242" y2="92" stroke="#5b6373" stroke-width="1.5" marker-end="url(#w)"/>
+  <line x1="446" y1="92" x2="492" y2="92" stroke="#5b6373" stroke-width="1.5" marker-end="url(#w)"/>
+  <line x1="712" y1="92" x2="758" y2="92" stroke="#1d6b46" stroke-width="1.6" marker-end="url(#wg)"/>
+
+  <!-- second row -->
+  <rect x="762" y="186" width="222" height="84" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="778" y="212" font-size="13.5" font-weight="600" fill="#14161a">One named endpoint</text>
+  <text x="778" y="232" font-size="11.5" fill="#5b6373">9 of them, all in one file</text>
+  <text x="778" y="250" font-size="11.5" fill="#5b6373">POST /api/artifact/create …</text>
+  <path d="M873 130 L873 182" fill="none" stroke="#1d6b46" stroke-width="1.6" marker-end="url(#wg)"/>
+
+  <rect x="496" y="186" width="216" height="84" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="512" y="212" font-size="13.5" font-weight="600" fill="#14161a">commit()</text>
+  <text x="512" y="232" font-size="11.5" fill="#5b6373">re-reads live metadata,</text>
+  <text x="512" y="250" font-size="11.5" fill="#5b6373">re-validates the payload</text>
+  <line x1="758" y1="228" x2="716" y2="228" stroke="#5b6373" stroke-width="1.5" marker-end="url(#w)"/>
+
+  <rect x="246" y="186" width="200" height="84" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="262" y="212" font-size="13.5" font-weight="600" fill="#14161a">The instance</text>
+  <text x="262" y="232" font-size="11.5" fill="#5b6373">on the approver's token</text>
+  <text x="262" y="250" font-size="11.5" fill="#5b6373">their ACLs still apply</text>
+  <line x1="492" y1="228" x2="450" y2="228" stroke="#5b6373" stroke-width="1.5" marker-end="url(#w)"/>
+
+  <rect x="16" y="186" width="180" height="84" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="32" y="212" font-size="13.5" font-weight="600" fill="#14161a">audit_events</text>
+  <text x="32" y="232" font-size="11.5" fill="#5b6373">approved_by_user: true</text>
+  <text x="32" y="250" font-size="11.5" fill="#5b6373">append-only for the app</text>
+  <line x1="242" y1="228" x2="200" y2="228" stroke="#5b6373" stroke-width="1.5" marker-end="url(#w)"/>
+
+  <!-- the blocked path -->
+  <rect x="16" y="312" width="968" height="110" rx="8" fill="#f6f7f9" stroke="#c3cad6"/>
+  <text x="34" y="338" font-size="13" font-weight="600" fill="#14161a">The path that does not exist</text>
+  <line x1="120" y1="368" x2="300" y2="368" stroke="#b03030" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#wx)"/>
+  <text x="34" y="372" font-size="12" fill="#5b6373">the model</text>
+  <text x="312" y="372" font-size="12" fill="#5b6373">any endpoint that writes to the instance</text>
+  <text x="34" y="400" font-size="11.5" fill="#5b6373">The agent's tool loop contains no SnClient mutator and no raw POST or PATCH. A test reads the source of every file in</text>
+  <text x="34" y="416" font-size="11.5" fill="#5b6373">that loop and fails the build the day one appears — which is the only reason the claim above is worth making.</text>
+</svg>

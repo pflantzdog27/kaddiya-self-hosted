@@ -22,3 +22,12 @@ design/**/kaddiya-*.html
 # Demo scripts name a live developer instance and its OAuth client ID;
 # they stay local to the presenter's machine, not in the public repo.
 docs/demo-*.md
+
+# Generated demo artifacts: screenshots, the capabilities PDF, the rendered
+# architecture document, and the card gallery's copies of app.js/style.css.
+# Rebuilt by scripts/seed-demo.mjs + scripts/demo-cards.mjs +
+# scripts/demo-capture.mjs + scripts/doc-to-pdf.mjs; see docs/local-demo.md.
+output/
+
+# Scratch: intermediate build material for slides and one-off documents.
+tmp/

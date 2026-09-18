@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 520" width="1000" height="520" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6373"/>
+    </marker>
+    <marker id="tb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563a8"/>
+    </marker>
+  </defs>
+
+  <text x="16" y="26" font-size="15" font-weight="600" fill="#14161a">One turn</text>
+
+  <!-- lifelines -->
+  <g font-size="12.5" font-weight="600" fill="#14161a">
+    <rect x="16" y="44" width="140" height="34" rx="6" fill="#fff" stroke="#c3cad6"/><text x="46" y="66">Browser</text>
+    <rect x="236" y="44" width="170" height="34" rx="6" fill="#fff" stroke="#c3cad6"/><text x="262" y="66">/api/chat (SSE)</text>
+    <rect x="486" y="44" width="170" height="34" rx="6" fill="#fff" stroke="#c3cad6"/><text x="520" y="66">agent loop</text>
+    <rect x="736" y="44" width="120" height="34" rx="6" fill="#fff" stroke="#c3cad6"/><text x="768" y="66">model</text>
+    <rect x="880" y="44" width="104" height="34" rx="6" fill="#fff" stroke="#c3cad6"/><text x="898" y="66">instance</text>
+  </g>
+  <g stroke="#dfe3ea">
+    <line x1="86" y1="78" x2="86" y2="452"/>
+    <line x1="321" y1="78" x2="321" y2="452"/>
+    <line x1="571" y1="78" x2="571" y2="452"/>
+    <line x1="796" y1="78" x2="796" y2="452"/>
+    <line x1="932" y1="78" x2="932" y2="452"/>
+  </g>
+
+  <g font-size="11.5" fill="#5b6373">
+    <line x1="86" y1="106" x2="317" y2="106" stroke="#2563a8" stroke-width="1.4" marker-end="url(#tb)"/>
+    <text x="100" y="100" fill="#2563a8">POST a message · session cookie</text>
+
+    <line x1="321" y1="140" x2="567" y2="140" stroke="#5b6373" stroke-width="1.4" marker-end="url(#t)"/>
+    <text x="334" y="134">system prompt + kept notebook notes + tools for the enabled tiers</text>
+
+    <!-- loop box -->
+    <rect x="496" y="162" width="470" height="196" rx="6" fill="#f6f7f9" stroke="#c3cad6" stroke-dasharray="5 3"/>
+    <text x="508" y="182" font-size="11.5" font-weight="600" fill="#14161a">at most 12 iterations</text>
+
+    <line x1="571" y1="206" x2="792" y2="206" stroke="#5b6373" stroke-width="1.4" marker-end="url(#t)"/>
+    <text x="584" y="200">messages + tool definitions</text>
+    <line x1="792" y1="238" x2="575" y2="238" stroke="#5b6373" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#t)"/>
+    <text x="600" y="232">a tool call, or text</text>
+
+    <line x1="571" y1="278" x2="928" y2="278" stroke="#2563a8" stroke-width="1.4" marker-end="url(#tb)"/>
+    <text x="584" y="272" fill="#2563a8">a read, on that person's OAuth token · 2 in flight per user</text>
+    <line x1="928" y1="310" x2="575" y2="310" stroke="#5b6373" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#t)"/>
+    <text x="660" y="304">rows — truncated to the model's result cap</text>
+
+    <line x1="567" y1="342" x2="325" y2="342" stroke="#5b6373" stroke-width="1.4" marker-end="url(#t)"/>
+    <text x="360" y="336">tool_start / tool_end, streamed as they happen</text>
+  </g>
+
+  <g font-size="11.5" fill="#5b6373">
+    <line x1="317" y1="384" x2="90" y2="384" stroke="#5b6373" stroke-width="1.4" marker-end="url(#t)"/>
+    <text x="104" y="378">text, token by token · cards · the suggested next step</text>
+
+    <line x1="317" y1="420" x2="90" y2="420" stroke="#5b6373" stroke-width="1.4" marker-end="url(#t)"/>
+    <text x="104" y="414">done — the transcript is encrypted under the org key and stored</text>
+  </g>
+
+  <rect x="16" y="466" width="968" height="44" rx="6" fill="#fff" stroke="#c3cad6"/>
+  <text x="34" y="484" font-size="11.5" fill="#5b6373">The model never holds a credential and never reaches the instance: it names a tool, and Kaddiya makes the call. Nothing here</text>
+  <text x="34" y="500" font-size="11.5" fill="#5b6373">is scheduled — a turn runs only while a request from a signed-in person is open, which is also why closing the tab ends it.</text>
+</svg>

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" width="1000" height="470" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6373"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563a8"/>
+    </marker>
+  </defs>
+
+  <!-- customer boundary -->
+  <rect x="16" y="46" width="560" height="404" rx="12" fill="#f6f7f9" stroke="#c3cad6" stroke-dasharray="6 4"/>
+  <text x="34" y="72" font-size="13" font-weight="600" fill="#5b6373">YOUR INFRASTRUCTURE</text>
+  <text x="34" y="92" font-size="12" fill="#5b6373">a laptop, a VM, or a container you run</text>
+
+  <!-- browser -->
+  <rect x="44" y="116" width="220" height="86" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="60" y="142" font-size="14" font-weight="600" fill="#14161a">Browser</text>
+  <text x="60" y="163" font-size="12" fill="#5b6373">the console UI, plain JS</text>
+  <text x="60" y="181" font-size="12" fill="#5b6373">session cookie = key material</text>
+
+  <!-- mcp client -->
+  <rect x="44" y="222" width="220" height="80" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="60" y="248" font-size="14" font-weight="600" fill="#14161a">MCP client</text>
+  <text x="60" y="269" font-size="12" fill="#5b6373">Claude Code / Desktop</text>
+  <text x="60" y="287" font-size="12" fill="#5b6373">bearer, read tools only</text>
+
+  <!-- kaddiya process -->
+  <rect x="316" y="116" width="238" height="186" rx="8" fill="#fff" stroke="#14161a" stroke-width="1.5"/>
+  <text x="332" y="142" font-size="14" font-weight="600" fill="#14161a">Kaddiya</text>
+  <text x="332" y="161" font-size="12" fill="#5b6373">one Node process, Express</text>
+  <line x1="332" y1="174" x2="538" y2="174" stroke="#e3e7ee"/>
+  <text x="332" y="194" font-size="12" fill="#14161a">agent loop · action catalog</text>
+  <text x="332" y="214" font-size="12" fill="#14161a">tenancy · audit · MCP server</text>
+  <line x1="332" y1="228" x2="538" y2="228" stroke="#e3e7ee"/>
+  <text x="332" y="248" font-size="12" fill="#14161a">embedded PGlite</text>
+  <text x="332" y="266" font-size="12" fill="#5b6373">or your PostgreSQL</text>
+  <text x="332" y="288" font-size="11.5" fill="#5b6373">per-org key · row-level security</text>
+
+  <!-- no-cloud note -->
+  <rect x="44" y="330" width="510" height="94" rx="8" fill="#fff" stroke="#c3cad6" stroke-dasharray="4 3"/>
+  <text x="60" y="354" font-size="12.5" font-weight="600" fill="#14161a">What is not in this picture</text>
+  <text x="60" y="375" font-size="12" fill="#5b6373">No Kaddiya cloud, account, or tenancy. No vendor holds your data or your keys.</text>
+  <text x="60" y="394" font-size="12" fill="#5b6373">Nothing is installed on the instance: no scoped app, no update set, no MID server,</text>
+  <text x="60" y="413" font-size="12" fill="#5b6373">no integration user. One OAuth Application Registry record, created by your admin.</text>
+
+  <!-- external -->
+  <rect x="660" y="116" width="316" height="96" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="678" y="142" font-size="14" font-weight="600" fill="#14161a">Your ServiceNow instance</text>
+  <text x="678" y="163" font-size="12" fill="#5b6373">REST APIs, as the signed-in person</text>
+  <text x="678" y="182" font-size="12" fill="#5b6373">your ACLs, roles and user criteria decide</text>
+  <text x="678" y="200" font-size="12" fill="#5b6373">what comes back — Kaddiya adds none</text>
+
+  <rect x="660" y="246" width="316" height="96" rx="8" fill="#fff" stroke="#c3cad6"/>
+  <text x="678" y="272" font-size="14" font-weight="600" fill="#14161a">Your model endpoint</text>
+  <text x="678" y="293" font-size="12" fill="#5b6373">Anthropic, an Anthropic-compatible</text>
+  <text x="678" y="312" font-size="12" fill="#5b6373">gateway, or an OpenAI-compatible API</text>
+  <text x="678" y="330" font-size="12" fill="#5b6373">your key, your agreement, your bill</text>
+
+  <!-- arrows -->
+  <line x1="264" y1="159" x2="312" y2="159" stroke="#2563a8" stroke-width="1.6" marker-end="url(#ab)"/>
+  <line x1="264" y1="262" x2="312" y2="222" stroke="#2563a8" stroke-width="1.6" marker-end="url(#ab)"/>
+
+  <path d="M554 172 C 600 172, 614 164, 656 164" fill="none" stroke="#2563a8" stroke-width="1.6" marker-end="url(#ab)"/>
+  <text x="580" y="158" font-size="10.5" fill="#2563a8">as the person</text>
+
+  <path d="M554 250 C 600 250, 614 292, 656 292" fill="none" stroke="#5b6373" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="586" y="284" font-size="10.5" fill="#5b6373">your key</text>
+
+  <text x="16" y="30" font-size="15" font-weight="600" fill="#14161a">Where everything runs</text>
+  <text x="16" y="462" font-size="11.5" fill="#5b6373">Blue is a path carrying a human's own credential. Kaddiya holds no identity of its own on either edge.</text>
+</svg>
