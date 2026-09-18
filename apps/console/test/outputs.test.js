@@ -166,6 +166,43 @@ test('the Files list pages, carries no bodies, and counts', async () => {
   assert.equal((await outputs.listOutputs(a.scope, crypto.randomUUID())).outputs.length, 0);
 });
 
+// Found on PostgreSQL, invisible on PGlite. Rows created in the same
+// millisecond need the full timestamp to be ordered against, and the driver
+// hands back a JavaScript Date, which has none of the microseconds. A cursor
+// built from that Date sorts before the row it came from, and the page
+// repeats it. Paging one row at a time is the shape that catches it.
+test('paging one row at a time repeats nothing and skips nothing', async () => {
+  const a = await workspace('acme-cursor');
+  const titles = Array.from({ length: 9 }, (_, i) => `Doc ${i}`);
+  // Created back to back on purpose: several will share a millisecond.
+  for (const title of titles) {
+    await outputs.createOutput(a.scope, {
+      conversationId: a.conv.id, title, filename: title, format: 'text',
+      content: `body of ${title}`, operationId: op(title.replace(/\s+/g, '-')),
+    });
+  }
+
+  const seen = [];
+  let cursor = null;
+  for (let page = 0; page < 20; page++) {
+    const result = await outputs.listOutputs(a.scope, a.conv.id, { limit: 1, cursor });
+    if (!result.outputs.length) break;
+    seen.push(result.outputs[0].title);
+    cursor = result.next_cursor;
+    if (!cursor) break;
+  }
+  assert.deepEqual(seen, titles, 'every file exactly once, in creation order');
+  assert.equal(new Set(seen).size, titles.length, 'no repeats');
+
+  // A cursor that is not one we issued is refused rather than trusted.
+  for (const bad of ['not-base64', Buffer.from('nonsense').toString('base64url'),
+    Buffer.from('2026-01-01T00:00:00Z|not-a-uuid').toString('base64url')]) {
+    const result = await outputs.listOutputs(a.scope, a.conv.id, { limit: 2, cursor: bad });
+    assert.equal(result.outputs.length, 2, 'a bad cursor restarts the list rather than erroring or leaking');
+    assert.equal(result.outputs[0].title, 'Doc 0');
+  }
+});
+
 test('org B, another member and another instance cannot reach org A by guessing ids', async () => {
   const a = await workspace('acme-tenant');
   const b = await workspace('initech-tenant');

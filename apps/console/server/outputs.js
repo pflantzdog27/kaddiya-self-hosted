@@ -236,7 +236,12 @@ function metadataOf(row, payload) {
 
 // ---- the write path ----
 
-const OUTPUT_COLUMNS = `o.id, o.conversation_id, o.current_revision, o.created_at AS output_created_at, o.updated_at`;
+// `created_cursor` is the creation time as PostgreSQL prints it, at full
+// microsecond precision. The driver parses timestamptz into a JavaScript
+// Date, which only has milliseconds — so a cursor built from that Date can
+// land *before* the row it was taken from, and the next page repeats it.
+// PGlite happened to hide this; PostgreSQL does not.
+const OUTPUT_COLUMNS = `o.id, o.conversation_id, o.current_revision, o.created_at AS output_created_at, o.created_at::text AS created_cursor, o.updated_at`;
 const REVISION_COLUMNS = `r.output_id, r.revision, r.payload_enc, r.byte_length, r.created_at, r.actor_kind`;
 
 /**
@@ -484,15 +489,21 @@ export async function outputMetadata(scope, outputId, options = {}) {
   return meta;
 }
 
+// The timestamp travels as the database's own text, never as a re-formatted
+// Date, and goes back in through a ::timestamptz cast so no precision is lost
+// in either direction.
+const TIMESTAMP_TEXT = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2})?|Z)?$/;
+
 function encodeCursor(row) {
-  return Buffer.from(`${new Date(row.output_created_at || row.created_at).toISOString()}|${row.id || row.output_id}`, 'utf8').toString('base64url');
+  const ts = row.created_cursor || new Date(row.output_created_at || row.created_at).toISOString();
+  return Buffer.from(`${ts}|${row.id || row.output_id}`, 'utf8').toString('base64url');
 }
 
 function decodeCursor(cursor) {
   if (!cursor) return null;
   try {
     const [ts, id] = Buffer.from(String(cursor), 'base64url').toString('utf8').split('|');
-    if (!UUID.test(id || '') || Number.isNaN(Date.parse(ts))) return null;
+    if (!UUID.test(id || '') || !TIMESTAMP_TEXT.test(ts || '')) return null;
     return { ts, id };
   } catch { return null; }
 }
