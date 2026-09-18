@@ -57,8 +57,11 @@ async function init() {
   document.querySelectorAll('.chip').forEach((chip) =>
     chip.addEventListener('click', () => { input.value = chip.textContent.trim(); form.requestSubmit(); }));
 
-  document.getElementById('panel-close').addEventListener('click', () => {
-    document.getElementById('panel').hidden = true;
+  WorkPane.start();
+  WorkPane.identify(me?.org?.id, me?.user_name);
+  document.getElementById('files-button').addEventListener('click', (e) => {
+    const id = activeConversationId();
+    if (id) WorkPane.open({ kind: 'files', conversationId: id }, { reason: 'user', opener: e.currentTarget });
   });
 
   document.getElementById('new-chat').addEventListener('click', () => startNewChat());
@@ -76,7 +79,7 @@ async function init() {
       setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
     } catch { btn.textContent = 'Select and copy'; }
   });
-  document.getElementById('who').addEventListener('click', showProfile);
+  document.getElementById('who').addEventListener('click', (e) => showProfile(e.currentTarget));
 
   // Coming back from the instance's consent screen (ADR 0014): `?mcp=<id>` is
   // the one chance to show the bearer, `?mcp_error=` says why there was none.
@@ -255,8 +258,30 @@ async function send() {
     setNextStep(suggested);
     input.focus();
     scrollDown();
+    addSaveAsDocument(assistant, raw);
+    refreshFilesCount();
     refreshConversations(); // picks up the auto-derived title
   }
+}
+
+/**
+ * Turn a reply into a file, with no second model call. This is also the
+ * dependable path when a provider answers inline instead of calling the
+ * workspace tool — the person is never left copying text out of a bubble.
+ */
+function addSaveAsDocument(bubble, text) {
+  if (!bubble || !String(text || '').trim()) return;
+  if (bubble.querySelector('.save-as-doc')) return;
+  if (String(text).trim().length < 200) return;  // a short answer is an answer, not a document
+  const row = document.createElement('div');
+  row.className = 'bubble-actions';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn-ghost save-as-doc';
+  button.textContent = 'Save as document';
+  button.addEventListener('click', () => saveAsDocument(text, button));
+  row.appendChild(button);
+  bubble.appendChild(row);
 }
 
 function addBubble(role, text, attachmentNames) {
@@ -539,7 +564,9 @@ function startNewChat() {
   removeRunRail();
   chat.innerHTML = '';
   chat.appendChild(welcomeBlock());
-  document.getElementById('panel').hidden = true;
+  WorkPane.reset();
+  OutputContext.clear();
+  setFilesCount(0);
   setThreadTitle('New chat');
   sessionCost = 0;
   sessionTurns = 0;
@@ -584,7 +611,8 @@ async function openConversation(id) {
   setNextStep(null);
   chat.innerHTML = '';
   removeRunRail();
-  document.getElementById('panel').hidden = true;
+  WorkPane.reset();
+  OutputContext.clear();
   setThreadTitle(conv.title || 'Conversation');
   if (currentRun) renderRunRail(currentRun);
 
@@ -615,11 +643,34 @@ async function openConversation(id) {
         const replay = replayOutcome(result);
         finishToolCard(card, { ms: null, ...replay });
         bubble.insertBefore(card, textEl);
+        // A file card is rebuilt from the committed tool result, not from an
+        // event that only existed while the stream was open. The Files list
+        // remains the authority; this is what puts the card back in place.
+        const saved = outputReferenceFrom(b.name, result);
+        if (saved) bubble.insertBefore(makeOutputCard(saved), textEl);
       }
+      addSaveAsDocument(bubble, text);
     }
   }
   refreshConversations();
+  refreshFilesCount();
   scrollDown();
+}
+
+/**
+ * The structured reference a workspace tool persisted in its result. Nothing
+ * is parsed out of model prose and no URL is taken from it: the ids are
+ * validated here and the browser builds its own authorised links.
+ */
+function outputReferenceFrom(toolName, result) {
+  if (!/^workspace_(create|update)_output$/.test(String(toolName || ''))) return null;
+  if (!result || result.is_error) return null;
+  try {
+    const parsed = JSON.parse(result.content);
+    if (parsed?.status !== 'saved') return null;
+    if (!OutputsApi.isId(parsed.output_id) || !Number.isInteger(parsed.revision)) return null;
+    return parsed;
+  } catch { return null; }  // a truncated result is not a file card
 }
 
 /** Reconstruct summary + preview rows for a replayed tool card from its stored result. */
@@ -671,13 +722,17 @@ function initialsOf(name) {
   return ((parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
-async function showProfile() {
-  const panel = document.getElementById('panel');
-  const body = document.getElementById('panel-body');
-  document.getElementById('panel-number').textContent = 'PROFILE';
-  document.getElementById('panel-title').textContent = '';
-  body.innerHTML = '<div class="conv-empty">Loading…</div>';
-  panel.hidden = false;
+/** Profile is a click, always: it opens explicitly and takes focus. */
+function showProfile(opener) {
+  return WorkPane.open({ kind: 'profile' }, { reason: 'user', opener: opener || document.getElementById('who') });
+}
+
+async function renderProfilePanel(body) {
+  body.replaceChildren();
+  const loading = document.createElement('div');
+  loading.className = 'conv-empty';
+  loading.textContent = 'Loading…';
+  body.appendChild(loading);
 
   let data;
   try {
@@ -685,14 +740,27 @@ async function showProfile() {
     data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   } catch (err) {
-    body.innerHTML = `<div class="conv-empty">Could not load profile: ${escapeHtml(err.message)}</div>`;
+    body.replaceChildren();
+    const failed = document.createElement('div');
+    failed.className = 'conv-empty';
+    failed.tabIndex = -1;
+    failed.setAttribute('data-work-heading', '');
+    failed.textContent = `Could not load profile: ${err.message}`;
+    body.appendChild(failed);
     return;
   }
 
   const u = data.user || {};
   const name = valueOf(u.name) || valueOf(u.user_name) || 'Unknown';
   const host = new URL(data.instance).host;
-  body.innerHTML = '';
+  body.replaceChildren();
+
+  const heading = document.createElement('h2');
+  heading.className = 'visually-hidden';
+  heading.tabIndex = -1;
+  heading.setAttribute('data-work-heading', '');
+  heading.textContent = 'Your profile';
+  body.appendChild(heading);
 
   const head = document.createElement('div');
   head.className = 'profile-head';
@@ -1053,7 +1121,58 @@ function appendChipSection(body, label, items, emptyText) {
   body.appendChild(section);
 }
 
-// ---- record detail panel (right rail) ----
+/** The conversation the browser is currently showing. */
+function activeConversationId() {
+  return currentConv;
+}
+
+// ---- record and profile as work-pane resources ----
+//
+// Both used to own the right rail outright. They are now resources in the
+// shared shell, which is what lets a record and a document be open at the
+// same time without either erasing the other. Two differences that matter:
+//
+//   · a record arriving from a tool's `focus` event opens with reason
+//     'auto', so it marks its tab instead of taking the view away from
+//     someone reading a document. An explicit click is reason 'user'.
+//   · profile is transient. It never stacks, and it holds no state: the
+//     one-time credential it can show lives in the DOM it builds and dies
+//     with dispose(), never in pane state or browser storage.
+
+WorkResources.register('record', {
+  key: (r) => `record:${r.table || 'task'}:${r.sysId}`,
+  describe: (r) => ({ label: r.number || r.sysId || 'Record' }),
+  mount(container, resource) {
+    renderRecordPanel(container, resource.data);
+  },
+});
+
+WorkResources.register('profile', {
+  key: () => 'profile',
+  transient: true,
+  describe: () => ({ label: 'Profile' }),
+  async mount(container) {
+    await renderProfilePanel(container);
+  },
+  dispose(container) {
+    // A one-time credential must not survive the view that showed it.
+    container.replaceChildren();
+  },
+});
+
+/** Open a record. `auto` is the tool stream; a person clicking is not. */
+function showRecord(data, { reason = 'auto', opener = null } = {}) {
+  const record = data?.record || {};
+  return WorkPane.open({
+    kind: 'record',
+    table: valueOf(record.sys_class_name) || 'task',
+    sysId: record.sys_id || valueOf(record.number) || 'record',
+    number: valueOf(record.number) || valueOf(record.short_description) || 'Record',
+    data,
+  }, { reason, opener });
+}
+
+// ---- record detail panel ----
 
 const PANEL_FIELDS = [
   ['state', 'State'],
@@ -1072,12 +1191,20 @@ function stateIsSettled(state) {
   return /resolved|closed|complete|cancel/i.test(state);
 }
 
-function showRecord({ record, journal }) {
-  const panel = document.getElementById('panel');
-  const body = document.getElementById('panel-body');
-  document.getElementById('panel-number').textContent = valueOf(record.number) || record.sys_id;
-  document.getElementById('panel-title').textContent = valueOf(record.short_description);
-  body.innerHTML = '';
+function renderRecordPanel(body, { record, journal } = { record: {} }) {
+  body.replaceChildren();
+  const head = document.createElement('header');
+  head.className = 'doc-head';
+  const number = document.createElement('div');
+  number.className = 'panel-number';
+  number.textContent = valueOf(record.number) || record.sys_id || '';
+  const title = document.createElement('h2');
+  title.className = 'panel-title';
+  title.tabIndex = -1;
+  title.setAttribute('data-work-heading', '');
+  title.textContent = valueOf(record.short_description) || 'Record';
+  head.append(number, title);
+  body.appendChild(head);
 
   const grid = document.createElement('div');
   grid.className = 'field-grid';
@@ -1133,7 +1260,6 @@ function showRecord({ record, journal }) {
     section.appendChild(list);
     body.appendChild(section);
   }
-  panel.hidden = false;
 }
 
 function valueOf(f) {
@@ -2414,7 +2540,15 @@ function escapeHtml(s) {
 // tables, ordered lists, blockquotes and rules render; links stay text with
 // the URL beside them, because an <a> the model controls is a phishing
 // surface (ADR 0008 D8).
-function renderMarkdown(src) {
+/**
+ * `headingBase` is the only thing that differs between chat and a document.
+ * In the transcript a model heading is a sub-heading of the conversation, so
+ * `#` renders as h3; in the work pane the document owns its own hierarchy and
+ * `#` is its h1. Everything else — escape first, then a closed set of tags —
+ * is identical, because it is the part that keeps model output and instance
+ * content from becoming markup (test/render.test.js pins the allow-list).
+ */
+function renderMarkdown(src, { headingBase = 3 } = {}) {
   const escaped = escapeHtml(src);
   const blocks = [];
   const withBlocks = escaped.replace(/```([\w+#.-]*)[^\n]*\n([\s\S]*?)(```|$)/g, (_, lang, code) => {
@@ -2483,7 +2617,11 @@ function renderMarkdown(src) {
 
     if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { out.push('<hr>'); continue; }
     const h = line.match(/^(#{1,4})\s+(.*)$/);
-    if (h) { out.push(`<h${h[1].length + 2}>${inline(h[2])}</h${h[1].length + 2}>`); continue; }
+    if (h) {
+      const level = Math.min(6, headingBase + h[1].length - 1);
+      out.push(`<h${level}>${inline(h[2])}</h${level}>`);
+      continue;
+    }
     if (line.trim() === '') { out.push('<br>'); continue; }
     out.push(`<p>${inline(line)}</p>`);
   }

@@ -8,51 +8,14 @@
 // closed set of tags. No <a>, no <img>, no remote loads, no event handlers, no
 // javascript: or data: URLs — from any input, however it is spelled.
 //
-// app.js is a browser script, not a module: it is loaded here in a vm with a
-// minimal DOM stub. `document.body.hasAttribute('data-preview')` returns true
-// so init() never runs.
+// The browser scripts are classic scripts, not modules: they are loaded here
+// in a vm with a DOM stub, in the same order app.html loads them, so a test
+// cannot pass on a file the page would fail on.
+// `document.body.hasAttribute('data-preview')` returns true so init() never runs.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import vm from 'node:vm';
-import { fileURLToPath } from 'node:url';
-
-const APP_JS = path.join(
-  path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'app.js',
-);
-
-function loadFrontend() {
-  const stubEl = {
-    hasAttribute: () => true,
-    addEventListener() {},
-    querySelector: () => null,
-    querySelectorAll: () => [],
-    appendChild() {},
-    insertBefore() {},
-    style: {},
-    classList: { add() {}, remove() {}, toggle() {} },
-  };
-  const sandbox = {
-    document: {
-      body: stubEl,
-      getElementById: () => stubEl,
-      querySelector: () => stubEl,
-      querySelectorAll: () => [],
-      createElement: () => ({ ...stubEl }),
-      addEventListener() {},
-    },
-    location: { assign() {} },
-    fetch: () => Promise.reject(new Error('no network in tests')),
-    setInterval: () => 0,
-    clearInterval() {},
-    console,
-  };
-  vm.createContext(sandbox);
-  vm.runInContext(fs.readFileSync(APP_JS, 'utf8'), sandbox, { filename: 'app.js' });
-  return sandbox;
-}
+import { loadFrontend } from './helpers/frontend.js';
 
 const { renderMarkdown, escapeHtml } = loadFrontend();
 
