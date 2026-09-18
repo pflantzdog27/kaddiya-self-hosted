@@ -46,6 +46,18 @@ const READ_TOOLS = [
   'sn_update_set_contents',
 ];
 
+// The console's own workspace (spec §6). These write rows in THIS workspace's
+// database and nothing else: no instance call, no filesystem path, no public
+// URL. They are enumerated here rather than folded into READ_TOOLS because
+// they do write — just never to ServiceNow — and a reviewer counting write
+// paths deserves to see that distinction spelled out instead of inferred.
+const WORKSPACE_TOOLS = [
+  'workspace_create_output',
+  'workspace_list_outputs',
+  'workspace_read_output',
+  'workspace_update_output',
+];
+
 // Mutating endpoints that never touch the instance: conversations, notebook,
 // the agent turn itself, sign-out.
 const CONSOLE_LOCAL_ENDPOINTS = [
@@ -137,10 +149,10 @@ test('the agent tool loop cannot reach any instance write', () => {
   }
 });
 
-test('the tool catalog is exactly the read tools plus the action catalog', () => {
+test('the tool catalog is exactly the read tools, the workspace tools and the action catalog', () => {
   const names = toolDefinitions().map((t) => t.name).sort();
-  const expected = [...READ_TOOLS, ...ACTIONS.map((a) => a.tool.name)].sort();
-  assert.deepEqual(names, expected, 'the tool list changed — a new read tool is added to READ_TOOLS here; a new write is an entry in server/actions.js (ADR 0010 D1)');
+  const expected = [...READ_TOOLS, ...WORKSPACE_TOOLS, ...ACTIONS.map((a) => a.tool.name)].sort();
+  assert.deepEqual(names, expected, 'the tool list changed — a new read tool is added to READ_TOOLS here; a console-local write is added to WORKSPACE_TOOLS; a new instance write is an entry in server/actions.js (ADR 0010 D1)');
 
   // The naming is load-bearing: a reviewer counts write paths by reading these
   // names, and so does the model. Anything that can end in an instance write
@@ -152,6 +164,78 @@ test('the tool catalog is exactly the read tools plus the action catalog', () =>
   for (const name of READ_TOOLS) {
     assert.ok(!name.startsWith('sn_propose_'), `${name} is listed as a read tool but named as a proposal`);
   }
+
+  // The naming boundary runs both ways: nothing that touches the instance may
+  // be called `workspace_`, and nothing console-local may be called `sn_`.
+  const workspace = names.filter((n) => n.startsWith('workspace_'));
+  assert.deepEqual(workspace, [...WORKSPACE_TOOLS].sort(), 'a workspace_ tool appeared that this file does not list');
+  for (const name of WORKSPACE_TOOLS) {
+    assert.ok(!READ_TOOLS.includes(name) && !name.startsWith('sn_'),
+      `${name} is console-local and must not be named as an instance tool`);
+  }
+  for (const tool of toolDefinitions().filter((t) => t.name.startsWith('workspace_'))) {
+    assert.match(tool.description, /NOTHING to ServiceNow|Metadata only|Read the version/,
+      `${tool.name} must tell the model plainly what it does and does not touch`);
+  }
+});
+
+// The capability gate (spec §6): the workspace tools are offered only to a
+// turn that was granted them, and that grant is independent of ServiceNow
+// write permission in BOTH directions — a read-only investigation can write
+// up its findings, and a turn with no workspace capability cannot save a file
+// however many instance actions it is allowed to propose.
+test('workspace tools are gated by their own capability, not by the instance write gate', async () => {
+  const { executeTool } = await import('../server/agent.js');
+  const names = (scope) => toolDefinitions(scope?.actionsTiers)
+    .filter((t) => {
+      if (scope?.readOnly && t.name.startsWith('sn_propose_')) return false;
+      if (!scope?.outputs && t.name.startsWith('workspace_')) return false;
+      return true;
+    })
+    .map((t) => t.name);
+
+  const investigating = names({ readOnly: true, outputs: { conversationId: 'c', turnId: 't' } });
+  assert.ok(WORKSPACE_TOOLS.every((n) => investigating.includes(n)), 'a read-only stage can still write up what it found');
+  assert.ok(!investigating.some((n) => n.startsWith('sn_propose_')), 'and still cannot propose an instance write');
+
+  const noWorkspace = names({ readOnly: false });
+  assert.ok(!noWorkspace.some((n) => n.startsWith('workspace_')), 'no capability, no file tools');
+  assert.ok(noWorkspace.some((n) => n.startsWith('sn_propose_')), 'while the instance proposals are unaffected');
+
+  // And the gate is enforced at execution, not only by omission from the list.
+  for (const name of WORKSPACE_TOOLS) {
+    await assert.rejects(
+      executeTool({}, name, {}, () => {}, { scope: { readOnly: false } }),
+      /cannot save files in the workspace/,
+      `${name} must refuse a turn that was never granted the capability`,
+    );
+  }
+});
+
+// The audit takes tool input verbatim. For a workspace write that input is the
+// whole document, which would then sit in an audit row, an error log and any
+// operator's grep. The row answers who saved what and whether it worked.
+test('the tool audit records a saved file by shape, never by content', async () => {
+  const { redactToolInput } = await import('../server/agent.js');
+  const secret = '# Payroll incident\n\nThe caller is Jane Doe, employee 4471.';
+  const redacted = redactToolInput('workspace_create_output', {
+    title: 'Payroll incident 4471', filename: 'payroll-incident-4471', format: 'markdown', content: secret,
+  });
+  const serialized = JSON.stringify(redacted);
+  assert.doesNotMatch(serialized, /Jane Doe|4471|Payroll/, 'no content, title or filename reaches the audit');
+  assert.equal(redacted.format, 'markdown', 'the shape is still recorded');
+  assert.equal(redacted.content_bytes, Buffer.byteLength(secret, 'utf8'));
+  assert.equal(redacted.titled, true);
+
+  const update = redactToolInput('workspace_update_output', { output_id: 'abc', expected_revision: 2, content: secret });
+  assert.equal(update.output_id, 'abc');
+  assert.equal(update.expected_revision, 2);
+  assert.equal(update.content, undefined);
+
+  // Instance tools are untouched: their inputs are the encoded query a
+  // reviewer needs, and they carry no document.
+  const query = { table: 'incident', query: 'active=true' };
+  assert.deepEqual(redactToolInput('sn_query', query), query);
 });
 
 // ADR 0014 D1. The MCP surface is defined by exclusion from server/actions.js,
@@ -166,6 +250,11 @@ test('the MCP surface is a subset of the read tools, and nothing else', () => {
   }
   assert.ok(!MCP_TOOLS.includes('sn_note_save'),
     'sn_note_save writes the console notebook behind a keep/discard card nobody can click over MCP');
+  // ADR 0014 stands: the MCP surface is read-only. The workspace tools write
+  // console rows and belong to a conversation an MCP bearer does not have.
+  for (const name of WORKSPACE_TOOLS) {
+    assert.ok(!MCP_TOOLS.includes(name), `${name} writes this workspace and must not be reachable over MCP`);
+  }
   assert.equal(new Set(MCP_TOOLS).size, MCP_TOOLS.length, 'a name appears once');
   // The one read tool deliberately left out, and no more than that.
   assert.deepEqual(READ_TOOLS.filter((n) => !MCP_TOOLS.includes(n)), ['sn_note_save']);

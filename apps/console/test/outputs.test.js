@@ -331,3 +331,48 @@ test('a conversation deleted mid-flight leaves no orphan and recreates nothing',
   const { rows } = await system((c) => c.query('SELECT count(*)::int AS n FROM outputs WHERE conversation_id = $1', [a.conv.id]));
   assert.equal(rows[0].n, 0, 'a late write did not resurrect the conversation');
 });
+
+// The provider window (spec §2 hazard 1, acceptance 4). This is a pure
+// function and needs no database, but it belongs beside the store it
+// protects: the bug it exists to prevent was the full transcript being
+// overwritten with the window it had just been sliced into.
+test('the provider window never opens mid-turn, and short histories pass through', () => {
+  const turn = (i) => ([
+    { role: 'user', content: `Q${i}` },
+    { role: 'assistant', content: [{ type: 'text', text: `A${i}` }, { type: 'tool_use', id: `t${i}`, name: 'sn_query', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${i}`, content: '[]' }] },
+  ]);
+  const history = Array.from({ length: 20 }, (_, i) => turn(i)).flat();  // 60 messages
+
+  const window = store.projectForModel(history, 40);
+  assert.ok(window.length <= 40 + 2, 'bounded');
+  assert.equal(window[0].role, 'user');
+  assert.equal(typeof window[0].content, 'string', 'it opens on a human turn, not on a tool result');
+
+  // Every tool_result in the window has its tool_use above it.
+  const seen = new Set();
+  for (const m of window) {
+    for (const b of Array.isArray(m.content) ? m.content : []) {
+      if (b.type === 'tool_use') seen.add(b.id);
+      if (b.type === 'tool_result') assert.ok(seen.has(b.tool_use_id), 'orphaned tool_result');
+    }
+  }
+
+  // A short history is passed through whole — and as a copy, so that pushing
+  // this turn's messages onto it cannot mutate the stored transcript.
+  const short = turn(0);
+  const passed = store.projectForModel(short, 40);
+  assert.deepEqual(passed, short);
+  assert.notEqual(passed, short, 'the window is a copy, not the stored array');
+  passed.push({ role: 'user', content: 'new' });
+  assert.equal(short.length, 3, 'the stored transcript is untouched by the window');
+
+  // A window that would contain no human turn at all falls back to the whole
+  // history rather than sending a sequence the API will reject.
+  const noHuman = [{ role: 'user', content: 'start' }, ...Array.from({ length: 50 }, (_, i) => ({
+    role: 'assistant', content: [{ type: 'text', text: `t${i}` }],
+  }))];
+  assert.equal(store.projectForModel(noHuman, 10).length, noHuman.length);
+  assert.deepEqual(store.projectForModel([], 40), []);
+  assert.deepEqual(store.projectForModel(null, 40), []);
+});

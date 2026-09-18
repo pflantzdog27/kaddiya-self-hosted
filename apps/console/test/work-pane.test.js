@@ -218,3 +218,28 @@ test('small helpers: titles and sizes read the way a person would say them', () 
   assert.equal(formatBytes(6432), '6.3 KB');
   assert.equal(formatBytes(2 * 1024 * 1024), '2.0 MB');
 });
+
+test('the transcript never reprints a saved document (spec §6: no duplicate bodies)', () => {
+  const { toolLabel, machineLine } = app;
+  const secret = '# Payroll incident 4471\n\nThe caller is Jane Doe.\n' + 'x'.repeat(5000);
+
+  for (const [name, input] of [
+    ['workspace_create_output', { title: 'Payroll incident 4471', filename: 'payroll', format: 'markdown', content: secret }],
+    ['workspace_update_output', { output_id: '3f1c9a2e-5b6d-4c7e-8a9b-0c1d2e3f4a5b', expected_revision: 2, content: secret }],
+  ]) {
+    const line = machineLine(name, input);
+    assert.doesNotMatch(line, /Jane Doe|xxxx/, `${name} printed the document into the transcript`);
+    assert.ok(line.length < 120, `${name} tool line is a line, not a document (${line.length} chars)`);
+    // What it does say is the shape of the write: enough to review, nothing to leak.
+    assert.match(line, /KB|B$/, `${name} reports how much was written`);
+    assert.match(toolLabel(name, input), /^FILE/, `${name} is labelled as a file operation`);
+  }
+
+  assert.match(machineLine('workspace_update_output', { output_id: 'abcdef12-0000-4000-8000-000000000000', expected_revision: 3, content: 'x' }), /from v3/,
+    'the version being revised is visible, because that is the conflict story');
+  assert.equal(machineLine('workspace_list_outputs', {}), 'files in this conversation');
+
+  // The instance tools are untouched: their line is the encoded query, which
+  // is exactly what this console exists to show.
+  assert.equal(machineLine('sn_query', { table: 'incident', query: 'active=true^priority=1' }), 'active=true^priority=1');
+});

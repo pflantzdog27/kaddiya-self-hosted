@@ -199,6 +199,12 @@ async function send() {
 
   const attachments = pendingFiles.splice(0, pendingFiles.length);
   renderAttachmentChips();
+  // Captured here, at submit: switching tabs while a message is half-typed
+  // must not change which file that message was written about.
+  const outputContext = OutputContext.capture();
+  OutputContext.clear();
+  WorkPane.newTurn();
+  autoOpenedThisTurn = false;
   addBubble('user', text, attachments.map((a) => a.name));
   const assistant = addBubble('assistant', '');
   const textEl = assistant.querySelector('.md');
@@ -210,7 +216,11 @@ async function send() {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, conversation_id: currentConv, model: selectedModel() || undefined, effort: selectedEffort(), attachments }),
+      body: JSON.stringify({
+        message: text, conversation_id: currentConv, model: selectedModel() || undefined,
+        effort: selectedEffort(), attachments,
+        output_context: outputContext ? { output_id: outputContext.output_id, revision: outputContext.revision } : undefined,
+      }),
     });
     if (res.status === 401) return location.assign('/signin');
     if (!res.ok) {
@@ -251,6 +261,9 @@ async function send() {
     }
   } catch (err) {
     textEl.innerHTML = renderMarkdown(raw + `\n\n**Connection error:** ${err.message}`);
+    // A turn whose stream died may still have committed a file before it did.
+    // The list is the authority; nothing is regenerated to find out.
+    refreshOpenOutputs({});
   } finally {
     for (const card of toolCards.values()) stopToolTimer(card);
     busy = false;
@@ -390,6 +403,10 @@ function finishToolCard(card, { ms, summary, error, preview }) {
 
 function toolLabel(name, input) {
   switch (name) {
+    case 'workspace_create_output': return `FILE · ${(input.format || 'markdown').toUpperCase()}`;
+    case 'workspace_update_output': return 'FILE · revision';
+    case 'workspace_read_output': return 'FILE · read';
+    case 'workspace_list_outputs': return 'FILES · list';
     case 'sn_query': return `QUERY · ${input.table}`;
     case 'sn_aggregate': return `AGGREGATE · ${input.table}`;
     case 'sn_schema': return `SCHEMA · ${input.table}`;
@@ -418,6 +435,19 @@ function toolLabel(name, input) {
 // the closest honest equivalent where the server composes it dynamically.
 function machineLine(name, input) {
   switch (name) {
+    // The document already has a card and a pane of its own; printing it a
+    // third time down the transcript is not transparency, it is noise — and
+    // the same content in one more place to leak from. The line says the
+    // shape of the write, which is what a reviewer reading the transcript
+    // actually needs.
+    case 'workspace_create_output':
+      return `${String(input.filename || input.title || 'file').slice(0, 80)} · ${byteLabel(input.content)}`;
+    case 'workspace_update_output':
+      return `${String(input.output_id || '').slice(0, 8)}… · from v${input.expected_revision} · ${byteLabel(input.content)}`;
+    case 'workspace_read_output':
+      return `${String(input.output_id || '').slice(0, 8)}…${input.revision ? ` · v${input.revision}` : ' · latest'}`;
+    case 'workspace_list_outputs':
+      return 'files in this conversation';
     case 'sn_query': {
       let q = input.query || '';
       if (input.order_by) q += `^ORDERBYDESC${input.order_by}`;
@@ -566,6 +596,8 @@ function startNewChat() {
   chat.appendChild(welcomeBlock());
   WorkPane.reset();
   OutputContext.clear();
+  seenOutputEvents.clear();
+  autoOpenedThisTurn = false;
   setFilesCount(0);
   setThreadTitle('New chat');
   sessionCost = 0;
@@ -613,6 +645,8 @@ async function openConversation(id) {
   removeRunRail();
   WorkPane.reset();
   OutputContext.clear();
+  seenOutputEvents.clear();
+  autoOpenedThisTurn = false;
   setThreadTitle(conv.title || 'Conversation');
   if (currentRun) renderRunRail(currentRun);
 
@@ -2112,6 +2146,14 @@ function handleSharedEvent(event, data, assistant, textEl, toolCards) {
     }
   };
   if (event === 'focus') { showRecord(data); return true; }
+  if (event === 'output_saved') { handleOutputSaved(data, assistant, textEl); return true; }
+  if (event === 'transcript_failed') {
+    // A file that committed is not undone by a transcript that did not save.
+    // Say which one failed rather than letting the saved file look imaginary.
+    assistant.insertBefore(makeNoticeCard(data.message), textEl);
+    refreshFilesCount();
+    return true;
+  }
   if (event === 'draft') { place(makeDraftCard(data)); return true; }
   if (event === 'artifact') { place(makeArtifactCard(data)); return true; }
   if (event === 'proposal') { place(makeProposalCard(data)); return true; }
@@ -2130,6 +2172,65 @@ function handleSharedEvent(event, data, assistant, textEl, toolCards) {
   }
   if (event === 'run') { currentRun = data; renderRunRail(data); return true; }
   return false;
+}
+
+// A reference event, not a file: `output_saved` says an id and a version
+// committed, and the browser answers by asking the authenticated API what is
+// true. Deduplicated by id and version, because a retry, a reconnect and a
+// replayed stream can all deliver the same commit twice.
+const seenOutputEvents = new Set();
+let autoOpenedThisTurn = false;
+
+async function handleOutputSaved(data, assistant, textEl) {
+  if (!OutputsApi.isId(data?.output_id) || !Number.isInteger(data.revision)) return;
+  // An event for another conversation belongs to another conversation.
+  if (data.conversation_id && data.conversation_id !== activeConversationId()) return;
+  const stamp = `${data.output_id}:${data.revision}`;
+  if (seenOutputEvents.has(stamp)) return;
+  seenOutputEvents.add(stamp);
+
+  const conversationAtEvent = activeConversationId();
+  let meta;
+  try { meta = await OutputsApi.read(data.output_id, { revision: data.revision }); }
+  catch { return; }
+  if (!meta || activeConversationId() !== conversationAtEvent) return;   // a late answer is dropped
+
+  const ref = {
+    output_id: meta.output_id, revision: meta.revision, title: meta.title,
+    filename: meta.filename, format: meta.format, byte_length: meta.byte_length,
+  };
+
+  // One card per file: a second version updates the card in place rather than
+  // stacking a new one under the same reply.
+  if (assistant && textEl) {
+    const existing = assistant.querySelector(`.output-card[data-output-id="${CSS.escape(ref.output_id)}"]`);
+    const card = makeOutputCard(ref);
+    if (existing) existing.replaceWith(card);
+    else assistant.insertBefore(card, textEl);
+  }
+
+  // The pane opens by itself only for the first file of a turn, only if the
+  // person has not closed it, and never over what they are already reading.
+  const key = `output:${ref.output_id}`;
+  if (WorkPane.has(key)) {
+    WorkPane.open({ kind: 'output', outputId: ref.output_id, title: ref.title }, { reason: 'auto' });
+  } else if (!autoOpenedThisTurn) {
+    autoOpenedThisTurn = true;
+    await WorkPane.open({ kind: 'output', outputId: ref.output_id, title: ref.title }, { reason: 'auto' });
+  }
+  refreshOpenOutputs({ outputId: ref.output_id, revision: ref.revision });
+  refreshFilesCount();
+}
+
+/** A plain notice in the transcript, escaped. */
+function makeNoticeCard(message) {
+  const card = document.createElement('div');
+  card.className = 'nc-card';
+  const text = document.createElement('div');
+  text.className = 'work-note';
+  text.textContent = message;
+  card.appendChild(text);
+  return card;
 }
 
 // ---- model choice for the next turn ----
@@ -2637,6 +2738,12 @@ function inline(s) {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|\s)\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>');
+}
+
+/** How big a write was, without saying what it said. */
+function byteLabel(content) {
+  const bytes = new TextEncoder().encode(String(content ?? '')).length;
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
 }
 
 function scrollDown() {

@@ -80,6 +80,28 @@ export async function saveConversation(scope, conv) {
   return { ...meta(rows[0]), messages, run: conv.run || null };
 }
 
+/**
+ * The bounded window a provider sees, taken from the full stored transcript.
+ *
+ * These are two different things, and conflating them cost history: the row
+ * holds everything, and the request holds as much as is useful. A plain
+ * slice() cannot do this, because a window may not begin in the middle of a
+ * turn — an opening `tool_result` has no `tool_use` above it, and Anthropic
+ * requires the first message to be the person's. So the window starts at the
+ * next real human turn at or after the cut; if the tail holds no human turn
+ * at all (one long staged run), the whole history goes rather than an
+ * invalid sequence.
+ */
+export function projectForModel(messages, limit = 40) {
+  if (!Array.isArray(messages)) return [];
+  if (messages.length <= limit) return [...messages];
+  const isHumanTurn = (m) => m?.role === 'user' && typeof m.content === 'string';
+  let start = messages.length - limit;
+  while (start < messages.length && !isHumanTurn(messages[start])) start++;
+  if (start >= messages.length) return [...messages];
+  return messages.slice(start);
+}
+
 /** Listing metadata only — never decrypts a body. */
 export async function listConversations(scope) {
   const { rows } = await withOrg(scope.ctx.orgId, (c) => c.query(

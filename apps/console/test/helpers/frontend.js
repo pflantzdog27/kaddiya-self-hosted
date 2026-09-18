@@ -31,7 +31,7 @@ export function loadFrontend({ scripts = FRONTEND_SCRIPTS, document: doc = makeD
     navigator: { clipboard: { writeText: () => Promise.reject(new Error('no clipboard in tests')) } },
     crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000000' },
     fetch: () => Promise.reject(new Error('no network in tests')),
-    URL, URLSearchParams, Buffer, console,
+    URL, URLSearchParams, Buffer, console, TextEncoder, TextDecoder, CSS: { escape: (v) => String(v) },
     setTimeout: () => 0,
     clearTimeout() {},
     setInterval: () => 0,
