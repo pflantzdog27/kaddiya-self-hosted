@@ -39,7 +39,11 @@ test('the environment can lower a limit but never raise one', async () => {
   const raised = JSON.parse(execFileSync(process.execPath, ['-e',
     "import('./server/outputs.js').then(m => console.log(JSON.stringify(m.LIMITS)))",
   ], {
-    cwd: new URL('..', import.meta.url).pathname,
+    // A file: URL object, as mcp.test.js and self-hosted.test.js already pass.
+    // `.pathname` yields "/D:/a/..." on Windows, with a leading slash that
+    // spawnSync cannot use as a cwd — which is how this passed on macOS and
+    // failed in CI.
+    cwd: new URL('..', import.meta.url),
     env: { ...process.env, KADDIYA_OUTPUT_MAX_BYTES: String(64 * 1024 * 1024), KADDIYA_OUTPUTS_PER_CONVERSATION: '9999' },
   }).toString());
   assert.equal(raised.revisionBytes, 256 * 1024, 'a value above the default is ignored');
