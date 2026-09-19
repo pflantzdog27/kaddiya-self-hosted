@@ -19,6 +19,11 @@ design/**/kaddiya-*.html
 # Agent worktrees (git worktrees, ~180 MB, recreated on demand)
 .claude/worktrees/
 
+# Build specifications and their handoff prompts: forward-looking plans and
+# release boundaries that belong in the working copy, not in a public repo.
+# The decisions a reviewer needs are in the ADRs and in the PR that made them.
+docs/plans/
+
 # Demo scripts name a live developer instance and its OAuth client ID;
 # they stay local to the presenter's machine, not in the public repo.
 docs/demo-*.md
