@@ -41,6 +41,7 @@
       <header class="thread-head">
         <div id="conv-title" class="thread-title">New chat</div>
         <div class="head-right">
+          <button id="files-button" class="files-button" type="button" hidden>Files <span id="files-count" class="files-count">0</span></button>
           <span id="spend" class="spend" title="Estimated spend this session" hidden></span>
           <span id="model-badge" class="model-badge">…</span>
         </div>
@@ -84,6 +85,7 @@
           <p>Kaddiya can apply changes without asking again, including configuration code and messages to people. Provider charges can accumulate. It checks the plan and verifies its work, but it can make mistakes. Keep this tab open. Stop prevents later actions; it cannot undo a write already sent.</p>
           <label><input id="autonomy-ack" type="checkbox" form="form"> I authorize this task to use the enabled actions as me.</label>
         </div>
+        <div id="output-context" class="output-context" aria-live="polite" hidden></div>
         <div id="attachments" class="attachments" hidden></div>
         <form id="form">
           <button id="attach" type="button" class="attach" title="Attach a text file: a log, an export, a script" aria-label="Attach a file">＋</button>
@@ -96,19 +98,33 @@
       </footer>
     </div>
 
-    <aside id="panel" class="rail-right" hidden>
-      <div class="panel-head">
-        <div class="panel-head-main">
-          <div id="panel-number" class="panel-number"></div>
-          <div id="panel-title" class="panel-title"></div>
+    <div id="pane-resize" class="pane-resize" role="separator" aria-orientation="vertical"
+         aria-label="Resize the work pane" aria-valuemin="20" aria-valuemax="80" aria-valuenow="55"
+         tabindex="0" hidden></div>
+
+    <aside id="work-pane" class="work-pane" aria-label="Work pane" hidden>
+      <div class="work-tabstrip">
+        <button id="work-back" class="work-back" type="button" hidden>← Back to chat</button>
+        <div id="work-tabs" class="work-tabs" role="tablist" aria-label="Open resources"></div>
+        <div class="work-overflow-wrap">
+          <button id="work-overflow" class="work-icon" type="button" aria-haspopup="true" aria-expanded="false" hidden>
+            ⋯<span class="visually-hidden">More open resources</span>
+          </button>
+          <div id="work-overflow-list" class="work-overflow-list" role="menu" hidden></div>
         </div>
-        <button id="panel-close" class="panel-close" type="button" aria-label="Close panel">✕</button>
+        <div class="work-strip-actions">
+          <button id="work-expand" class="work-icon" type="button" aria-pressed="false" title="Expand the work pane" aria-label="Expand the work pane">⤢</button>
+          <button id="work-close" class="work-icon" type="button" title="Close the work pane" aria-label="Close the work pane">✕</button>
+        </div>
       </div>
-      <div id="panel-body" class="panel-body"></div>
+      <div id="work-panels" class="work-panels"></div>
     </aside>
   </div>
 
   <script src="/branding.js"></script>
+  <script src="/work-pane.js"></script>
+  <script src="/output-viewers.js"></script>
+  <script src="/outputs.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

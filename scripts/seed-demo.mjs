@@ -58,6 +58,7 @@ const tenancy = await import(`${CONSOLE_DIR}/server/tenancy.js`);
 const sessions = await import(`${CONSOLE_DIR}/server/sessions.js`);
 const store = await import(`${CONSOLE_DIR}/server/store.js`);
 const { audit } = await import(`${CONSOLE_DIR}/server/audit.js`);
+const outputs = await import(`${CONSOLE_DIR}/server/outputs.js`);
 
 await migrate();
 
@@ -68,7 +69,8 @@ const ORG_NAME = 'Northwind Consulting';
 
 // Start clean so reseeding is idempotent.
 await system((c) => c.query(
-  `TRUNCATE usage_events, audit_events, notebook_entries, conversations, members,
+  `TRUNCATE output_revisions, outputs, conversation_turns,
+            usage_events, audit_events, notebook_entries, conversations, members,
             oauth_states, sessions, mcp_tokens, instance_aliases, instances, orgs CASCADE`,
 ));
 
@@ -365,6 +367,125 @@ await seedConversation(members.sam, {
   ],
 });
 
+// ---- the work pane: real files, not a mock-up ----
+//
+// The outputs are written through the real service, and the tool results
+// below carry the references it returned — so the file cards rebuild on
+// replay exactly as they did when the turn ran, the Files list is populated,
+// and both versions really download. Seeding a card without the row behind it
+// would demo a screenshot.
+
+const PROCESS_V1 = `# Incident escalation process
+
+## Purpose
+
+Make it obvious, at 02:00, who to wake and when. This applies to every P1 and P2 on the
+payroll and HR platforms.
+
+## Roles
+
+| Role | Owns | Reachable via |
+| --- | --- | --- |
+| Service desk | First response, triage, comms | Queue \`SD-FRONT\` |
+| Incident manager | Severity, bridge, stakeholder updates | On-call rota |
+| Platform on-call | Technical mitigation | Rota \`plat-primary\` |
+
+## Steps
+
+1. Confirm impact and set severity within **10 minutes**.
+2. For P1, open the bridge and page the platform on-call.
+3. Update the ticket every 30 minutes until mitigated.
+4. Hand over at shift change with a written summary in the work notes.
+
+> A severity is a decision, not a guess. If impact is unclear, escalate and correct later.
+`;
+
+const PROCESS_V2 = `${PROCESS_V1}
+## After-hours exception
+
+Between 18:00 and 07:00 the service desk pages the platform on-call **directly** and notifies
+the incident manager afterwards. Waiting for an incident manager out of hours cost us
+mitigation time on INC0012840; this exception exists because of that incident.
+`;
+
+const CHECKLIST = `check,owner,notes,done
+"Rota populated, next 14 days",Incident manager,"Covers ""plat-primary"" and backup",yes
+"Bridge number published",Service desk,"In the runbook, section 2",yes
+"After-hours page tested",Platform on-call,"Test page, not a live incident",no
+"Stakeholder list current",Incident manager,"Includes the payroll provider contact",no
+`;
+
+{
+  const scope = scopeFor(avery.sysId);
+  const conv = await store.createConversation(scope);
+
+  const created = await outputs.createOutput(scope, {
+    conversationId: conv.id, title: 'Incident escalation process',
+    filename: 'incident escalation process', format: 'markdown', content: PROCESS_V1,
+    operationId: `demo-${conv.id}:create`, provenance: { origin: 'assistant' },
+  });
+  const outputId = created.reference.output_id;
+  const revised = await outputs.updateOutput(scope, {
+    conversationId: conv.id, outputId, expectedRevision: 1, content: PROCESS_V2,
+    changeSummary: 'Added the after-hours exception',
+    operationId: `demo-${conv.id}:update`, provenance: { origin: 'assistant' },
+  });
+  const checklist = await outputs.createOutput(scope, {
+    conversationId: conv.id, title: 'Escalation readiness checklist',
+    filename: 'escalation readiness checklist', format: 'csv', content: CHECKLIST,
+    operationId: `demo-${conv.id}:checklist`, provenance: { origin: 'assistant' },
+  });
+
+  await store.saveConversation(scope, {
+    ...conv,
+    title: 'Document the incident escalation process',
+    messages: [
+      { role: 'user', content: 'Document our incident escalation process — roles, the steps, and how after-hours works.' },
+      { role: 'assistant', content: [
+        { type: 'text', text: 'Writing that up as a document you can keep.' },
+        toolUse('tu_50', 'workspace_create_output', {
+          title: 'Incident escalation process', filename: 'incident escalation process',
+          format: 'markdown', content: PROCESS_V1,
+        }),
+      ] },
+      toolResult('tu_50', created.reference),
+      { role: 'assistant', content: [{ type: 'text', text: 'Saved **Incident escalation process**. It covers the purpose, the three roles, and the escalation steps. Ask for a revision and I will update the same file.' }] },
+
+      { role: 'user', content: 'Add the after-hours exception we agreed after INC0012840.' },
+      { role: 'assistant', content: [
+        { type: 'text', text: 'Reading the current version before I replace it.' },
+        toolUse('tu_51', 'workspace_read_output', { output_id: outputId }),
+      ] },
+      toolResult('tu_51', { output_id: outputId, revision: 1, title: 'Incident escalation process', total_chars: PROCESS_V1.length, truncated: false }),
+      { role: 'assistant', content: [
+        { type: 'text', text: 'Adding the exception, and saying why it exists.' },
+        toolUse('tu_52', 'workspace_update_output', {
+          output_id: outputId, expected_revision: 1, content: PROCESS_V2,
+          change_summary: 'Added the after-hours exception',
+        }),
+      ] },
+      toolResult('tu_52', revised.reference),
+      { role: 'assistant', content: [{ type: 'text', text: 'Updated to **v2**. Version 1 is still there in the version selector, and either one downloads as itself.' }] },
+
+      { role: 'user', content: 'Give me a readiness checklist as a CSV too.' },
+      { role: 'assistant', content: [
+        { type: 'text', text: 'Four checks, with an owner on each.' },
+        toolUse('tu_53', 'workspace_create_output', {
+          title: 'Escalation readiness checklist', filename: 'escalation readiness checklist',
+          format: 'csv', content: CHECKLIST,
+        }),
+      ] },
+      toolResult('tu_53', checklist.reference),
+      { role: 'assistant', content: [{ type: 'text', text: 'Saved as a table — open it beside the document and the two tabs switch without losing either.' }] },
+    ],
+  });
+  await withOrg(org.id, (c) => c.query(
+    `UPDATE conversations SET title = $2, pinned = true, created_at = now() - interval '2 hours',
+                              updated_at = now() - interval '2 hours' WHERE id = $1`,
+    [conv.id, 'Document the incident escalation process'],
+  ));
+}
+
 // ---- the instance notebook ----
 
 const NOTES = [
@@ -486,6 +607,7 @@ Demo workspace seeded.
   instance    ${INSTANCE_HOST} (verified, non-production)
   members     ${PEOPLE.length} — ${PEOPLE.map((p) => `${p.user_name}:${p.status}`).join(', ')}
   models      ${CONNECTIONS.length} connections
+  files       3 outputs in "Document the incident escalation process" (one at v2)
   signed in   ${avery.name} (owner)
 
   cookie      sid=${sid}                 (Avery Kline, owner)

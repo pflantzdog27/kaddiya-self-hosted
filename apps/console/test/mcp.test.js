@@ -315,6 +315,14 @@ test('the /mcp endpoint, over real HTTP, on a booted console', async (t) => {
     jsonrpc: '2.0', id: i, method: 'tools/call', params: { name: 'sn_aggregate', arguments: { table: 'incident' } },
   })));
   assert.ok(burst.every((r) => r.status === 200), 'a runaway host is told to wait, never failed');
+  // How many of the ten got past the in-flight bound is a race by design: it
+  // depends on how fast the first eight finish, which is why the audit
+  // assertion at the end counts the ones that ran rather than assuming ten
+  // did. (Assuming ten passed on PGlite and flaked against PostgreSQL, where
+  // each call is a round trip and more of them overlap.)
+  const heldBack = burst.filter((r) => /calls in flight per token/.test(r.json?.result?.content?.[0]?.text || '')).length;
+  const burstRan = burst.length - heldBack;
+  assert.ok(burstRan >= MCP_MAX_IN_FLIGHT_PER_TOKEN, `at least the bound's worth ran, got ${burstRan}`);
 
   // ---- the mint flow's browser half ----
   const started = await fetch(base + '/auth/mcp?label=laptop&ttl_ms=86400000', { headers: { Cookie: cookie }, redirect: 'manual' });
@@ -432,8 +440,11 @@ test('the /mcp endpoint, over real HTTP, on a booted console', async (t) => {
   const rows = await listAudit(world.scope, { limit: 100 });
   assert.equal((await usageSummary(world.ctx)).turns_total, usageBefore, 'MCP consumes no model tokens and writes no usage row');
 
+  // A row per call that ran, and none for a call the bound turned away: the
+  // audit is the record of what executed, not of what was asked for.
   const calls = rows.filter((r) => r.action === 'mcp_tool_call' && r.token_id === working.id);
-  assert.ok(calls.length >= 11, `expected a row per call, found ${calls.length}`);
+  assert.equal(calls.length, 1 + burstRan,
+    `expected a row for the single call plus each of the ${burstRan} burst calls that ran, found ${calls.length}`);
   const query = calls.find((r) => r.tool === 'sn_query');
   assert.equal(query.user, world.user.user_name);
   assert.equal(query.table, 'incident');

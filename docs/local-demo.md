@@ -53,8 +53,9 @@ For screenshots, a walkthrough of the screens, or a capabilities PDF, the consol
 against a **seeded throwaway workspace**. Every screen except one reads the workspace database
 rather than ServiceNow, so a seeded session renders the product as it looks in use — with an
 organization, members at every status, several model connections, conversations that replay,
-notebook entries, MCP tokens and audit history. What it cannot do is run a turn: streaming a
-reply needs a real model and a real instance.
+notebook entries, MCP tokens and audit history, and the work pane's saved files with their
+versions and downloads. What it cannot do is run a turn: streaming a reply needs a real model
+and a real instance.
 
 ```bash
 node scripts/seed-demo.mjs --dir /tmp/kaddiya-demo --fresh
@@ -91,3 +92,41 @@ instance (`/api/profile` asks ServiceNow for the person's own user record, roles
 so the capture stubs that single response; everything else on that panel is the seeded
 workspace answering for itself. And the demo data is invented — no customer data, and the
 instance host does not exist.
+
+## Showing the work pane
+
+The pane beside the conversation holds whatever is being made or examined — a document, a
+table, a script, a record. Six steps, about four minutes, entirely on synthetic data.
+
+Steps 1 and 2 stream a reply, so they need a real model and instance. **Everything from step 3
+on works on the seeded workspace above**, with no model key and no instance: `seed-demo.mjs`
+writes its outputs through the real service and stores the tool results the turn returned, so
+the file cards, the Files list, the version selector and both downloads are the product's own,
+not a mock-up. On a seeded workspace, start at step 3 and open the pinned conversation
+**"Document the incident escalation process"**.
+
+1. **Ask for a deliverable.** "Document our incident escalation process, with roles, a decision
+   table and after-hours handling." Kaddiya writes the file, the pane opens on it, and a card
+   appears in the chat. The transcript says what was saved and how big it was — the document
+   itself is in the pane, not repeated down the conversation.
+2. **Revise it.** "Shorten the introduction and add an approval checkpoint." It reads the
+   current version, then replaces it; the pane moves to v2 in place, keeping your position.
+   Open v1 from the version selector and the pane says `Viewing v1 · latest v2`, with a way
+   back.
+3. **Take it away.** Download both versions. The bytes are the stored revision, not a
+   re-render — the same file whoever you send it to will open.
+4. **Add a second file.** "Give me a readiness checklist as CSV." Two tabs now; switch between
+   the document and the table. Quoted commas stay inside their cell, because the reader is a
+   real RFC 4180 parser rather than a split.
+5. **Open a record.** Ask about an incident. The record opens as a third tab and marks itself,
+   without taking the document off the screen — that is the point of the shell: neither
+   resource erases the other.
+6. **Reload the browser.** The Files list, both versions and both downloads are still there.
+   Closing a tab closed a view, not a file. Then narrow the window until the layout becomes a
+   single work area and use **← Back to chat**.
+
+Two things worth saying out loud while showing it. Everything in the pane lives in this
+workspace's own database, encrypted under the workspace key — no filesystem path, no public
+link, and nothing shared outside the conversation that made it. And creating or revising a file
+is not a ServiceNow change: it needs no approval card because it touches no instance, which is
+also why an investigation that may not write to the instance can still write up what it found.

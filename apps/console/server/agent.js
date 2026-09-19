@@ -11,6 +11,7 @@ import { saveNote, notesForPrompt } from './notebook.js';
 import { proposalTools, actionById } from './actions.js';
 import { scriptProblems } from './commits.js';
 import { buildUpdateSetPackage } from './update-set-package.js';
+import * as outputs from './outputs.js';
 import { nextStepStream, stripNextStep } from './nextstep.js';
 import crypto from 'node:crypto';
 
@@ -116,12 +117,103 @@ export async function smokeTestModel(model) {
   return { model: message.model, usage: message.usage };
 }
 
+// The console's own workspace: files in this conversation, in this
+// workspace's database. Deliberately a separate family from sn_* — a reviewer
+// counting write paths should never have to work out whether
+// `workspace_create_output` touches ServiceNow, and neither should the model.
+// Nothing here reaches the instance, and nothing here needs an approval card.
+export const WORKSPACE_TOOLS = Object.freeze([
+  'workspace_create_output', 'workspace_read_output', 'workspace_list_outputs', 'workspace_update_output',
+]);
+
+const FORMAT_ENUM = Object.keys(outputs.FORMATS);
+
+export function workspaceTools() {
+  return [
+    {
+      name: 'workspace_create_output',
+      description:
+        "Save a file in THIS conversation's workspace: a document, a table, a script, a data extract. " +
+        'Use it when the person asked for a deliverable, or when what you are producing is a standalone work product ' +
+        'they will want to read beside the chat, revise, and download. It appears in a pane next to the conversation. ' +
+        'Keep ordinary answers, short explanations and tool commentary in chat instead — this is for the thing itself, not for talk about it. ' +
+        'Write the COMPLETE content; there is no append. This writes NOTHING to ServiceNow and changes no record: it is a file in the console, ' +
+        'reversible and private to this conversation, so it needs no approval card. ' +
+        'After it saves, summarise briefly in chat and point at the file — do not repeat the whole document in your reply.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'What a person would call this, e.g. "Incident escalation process"' },
+          filename: { type: 'string', description: 'A plain base name. The extension comes from the format; path separators are removed.' },
+          format: { type: 'string', enum: FORMAT_ENUM, description: 'markdown for documents, csv/tsv for tables, json for data, code for source, text for plain notes' },
+          language: { type: 'string', description: 'For format=code only: the language, e.g. javascript, python, sql, xml' },
+          content: { type: 'string', description: 'The complete file content, as UTF-8 text' },
+          change_summary: { type: 'string', description: 'Optional one line on what this file is for' },
+        },
+        required: ['title', 'filename', 'format', 'content'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'workspace_read_output',
+      description:
+        'Read a file saved in this conversation, by id. Read the version you intend to revise BEFORE revising it: a revision replaces the ' +
+        'whole file, so writing one from memory loses whatever you did not recall. Long files come back in chunks — keep reading with `offset` ' +
+        'until `truncated` is false. If a file is too large to read in full, say so and offer a narrower document or a separate section, ' +
+        'rather than replacing it with an excerpt.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          output_id: { type: 'string', description: 'The id from a create/update result or the file list' },
+          revision: { type: 'integer', description: 'A specific version; omit for the latest' },
+          offset: { type: 'integer', description: 'Character offset to start from, for long files' },
+          limit: { type: 'integer', description: 'Characters to return, capped at 12000' },
+        },
+        required: ['output_id'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'workspace_list_outputs',
+      description: "List the files saved in this conversation, newest work first, with their ids, titles, formats and current versions. Metadata only — use workspace_read_output for content.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          cursor: { type: 'string', description: 'From a previous page' },
+          limit: { type: 'integer' },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'workspace_update_output',
+      description:
+        'Save a new version of an existing file, replacing its content in full. `expected_revision` is the version you read and revised: ' +
+        'if the file has moved on since, this is refused rather than overwriting work you never saw — read the latest and revise that. ' +
+        'The previous version is kept and stays downloadable; nothing is destroyed. The file keeps its name and format. ' +
+        'This writes NOTHING to ServiceNow.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          output_id: { type: 'string' },
+          expected_revision: { type: 'integer', description: 'The version number you read before making this change' },
+          content: { type: 'string', description: 'The complete new content of the file' },
+          change_summary: { type: 'string', description: 'One line on what changed, shown in the version list' },
+        },
+        required: ['output_id', 'expected_revision', 'content'],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
 export function toolDefinitions(actionsTiers) {
   return [
     // Every tool that can end in an instance write comes from the catalog
     // (ADR 0010 D1), filtered to the tiers this org enables; the read tools
     // below are defined here.
     ...proposalTools(actionsTiers),
+    ...workspaceTools(),
     {
       name: 'sn_query',
       description:
@@ -335,9 +427,146 @@ async function propose(ctx, emit, actionId, body, cardEvent, cardData, reply) {
   }
 }
 
+// ---- the console's own workspace ----
+//
+// Capability, not tier: `scope.outputs` is what makes these tools callable at
+// all, and it is granted separately from ServiceNow write permission. That
+// separation is the point. A read-only investigative stage must be able to
+// write up what it found — a report is not an instance change — and equally,
+// permission to change a record has never implied permission to keep files.
+
+const MAX_READ_CHARS = 12_000;
+
+function workspaceScope(ctx) {
+  const capability = ctx.scope?.outputs;
+  if (!capability?.conversationId) {
+    throw new Error('This stage cannot save files in the workspace.');
+  }
+  return capability;
+}
+
+/**
+ * The operation id: server-derived from the turn and the provider's tool-use
+ * id, never from the model's own input. A retried tool call therefore replays
+ * to the same revision instead of making a second file.
+ */
+function operationFor(ctx, suffix) {
+  const capability = ctx.scope.outputs;
+  return `${capability.turnId}:${ctx.toolUseId || suffix}`;
+}
+
+function provenanceFor(ctx) {
+  return { origin: 'assistant', turnId: ctx.scope.outputs.turnId, toolUseId: ctx.toolUseId };
+}
+
+/** Code points, not UTF-16 units: a chunk boundary never splits a character. */
+function sliceByCodePoints(text, offset, limit) {
+  const points = Array.from(text);
+  const start = Math.max(0, Math.min(Math.floor(Number(offset) || 0), points.length));
+  const size = Math.max(1, Math.min(Math.floor(Number(limit) || MAX_READ_CHARS), MAX_READ_CHARS));
+  const end = Math.min(start + size, points.length);
+  return { chunk: points.slice(start, end).join(''), start, end, total: points.length };
+}
+
 export async function executeTool(sn, name, input, emit, ctx = {}) {
   if (ctx.scope?.readOnly && name.startsWith('sn_propose_')) throw new Error('This stage is read-only.');
   switch (name) {
+    // ---- workspace files: console-local, never the instance ----
+    case 'workspace_create_output': {
+      const capability = workspaceScope(ctx);
+      const { reference } = await outputs.createOutput(ctx.scope, {
+        conversationId: capability.conversationId,
+        title: input.title,
+        filename: input.filename || input.title,
+        format: input.format,
+        language: input.language,
+        content: input.content,
+        changeSummary: input.change_summary,
+        operationId: operationFor(ctx, 'create'),
+        actorKind: 'assistant',
+        leaseId: capability.leaseId,
+        provenance: provenanceFor(ctx),
+      });
+      // Emitted only after the transaction committed, and carrying no content:
+      // this is an invalidation notice, and the browser answers it by asking
+      // the authenticated API what is true.
+      emit('output_saved', {
+        conversation_id: capability.conversationId,
+        turn_id: capability.turnId,
+        tool_use_id: ctx.toolUseId || null,
+        output_id: reference.output_id,
+        revision: reference.revision,
+        operation: 'created',
+      });
+      return reference;
+    }
+
+    case 'workspace_update_output': {
+      const capability = workspaceScope(ctx);
+      const { reference } = await outputs.updateOutput(ctx.scope, {
+        conversationId: capability.conversationId,
+        outputId: input.output_id,
+        expectedRevision: input.expected_revision,
+        content: input.content,
+        changeSummary: input.change_summary,
+        operationId: operationFor(ctx, 'update'),
+        actorKind: 'assistant',
+        leaseId: capability.leaseId,
+        provenance: provenanceFor(ctx),
+      });
+      emit('output_saved', {
+        conversation_id: capability.conversationId,
+        turn_id: capability.turnId,
+        tool_use_id: ctx.toolUseId || null,
+        output_id: reference.output_id,
+        revision: reference.revision,
+        operation: 'updated',
+      });
+      return reference;
+    }
+
+    case 'workspace_read_output': {
+      const capability = workspaceScope(ctx);
+      const found = await outputs.readOutput(ctx.scope, input.output_id, {
+        revision: input.revision ?? null,
+        conversationId: capability.conversationId,
+      });
+      if (!found) throw new Error('No such file in this conversation. List the files and use an id from the list.');
+      const { chunk, start, end, total } = sliceByCodePoints(found.content, input.offset, input.limit);
+      const truncated = end < total;
+      return {
+        output_id: found.output_id,
+        revision: found.revision,
+        current_revision: found.current_revision,
+        title: found.title,
+        filename: found.filename,
+        format: found.format,
+        language: found.language,
+        content: chunk,
+        total_chars: total,
+        offset: start,
+        next_offset: truncated ? end : null,
+        truncated,
+        note: truncated
+          ? 'This is part of the file. Read on from next_offset before revising it; a revision replaces the whole file.'
+          : undefined,
+      };
+    }
+
+    case 'workspace_list_outputs': {
+      const capability = workspaceScope(ctx);
+      const page = await outputs.listOutputs(ctx.scope, capability.conversationId, {
+        cursor: input.cursor, limit: input.limit,
+      });
+      return {
+        outputs: page.outputs.map((o) => ({
+          output_id: o.output_id, title: o.title, filename: o.filename,
+          format: o.format, current_revision: o.current_revision, byte_length: o.byte_length,
+        })),
+        next_cursor: page.next_cursor,
+      };
+    }
+
     case 'sn_query': return sn.queryTable(input);
     case 'sn_schema': return sn.schema(input);
     case 'sn_aggregate': return sn.aggregate(input);
@@ -530,6 +759,27 @@ function previewOf(result) {
   return rows.slice(0, 5).map((r) => Object.fromEntries(cols.map((k) => [k, display(r[k])])));
 }
 
+/**
+ * What the generic tool audit is allowed to see.
+ *
+ * The audit row takes `tu.input` verbatim, which for a workspace write is the
+ * entire document — encrypted at rest, but then also in an error log, a
+ * console line and anywhere an operator greps. An audit answers "who saved
+ * what, when, and did it work"; the body is already stored once, under a key,
+ * with a version number on it. So: ids, shape and outcome, never content.
+ */
+export function redactToolInput(name, input) {
+  if (!name.startsWith('workspace_')) return input;
+  const safe = {};
+  for (const key of ['output_id', 'expected_revision', 'revision', 'format', 'language', 'offset', 'limit', 'cursor']) {
+    if (input?.[key] !== undefined) safe[key] = input[key];
+  }
+  if (typeof input?.content === 'string') safe.content_bytes = Buffer.byteLength(input.content, 'utf8');
+  if (input?.title) safe.titled = true;      // that there was a title, not what it said
+  if (input?.filename) safe.named = true;
+  return safe;
+}
+
 function summarize(name, result) {
   if (Array.isArray(result)) return `${result.length} record${result.length === 1 ? '' : 's'}`;
   if (name === 'sn_schema') return `${result.fields?.length ?? 0} fields`;
@@ -551,6 +801,11 @@ function summarize(name, result) {
   if (name === 'sn_docs_search') return `${result.results?.length ?? 0} topics · ${result.family}`;
   if (name === 'sn_docs_get') return `${Math.max(1, Math.round((result.chars || 0) / 1000))}k chars · ${result.family}`;
   if (name === 'sn_note_save') return result.status === 'already_kept' ? 'already kept' : 'note — awaiting your approval';
+  // A file card carries the detail; the tool line says only that it landed.
+  if (name === 'workspace_create_output') return `${result.filename} · saved`;
+  if (name === 'workspace_update_output') return `${result.filename} · v${result.revision}`;
+  if (name === 'workspace_read_output') return result.truncated ? `part of ${result.filename}` : result.filename;
+  if (name === 'workspace_list_outputs') return `${result.outputs?.length ?? 0} file(s)`;
   return 'ok';
 }
 
@@ -596,6 +851,9 @@ export async function runAgentTurn({ cfg, sn, user, messages, userText, emit, au
   for (let i = 0; i < (maxIterations || MAX_LOOP_ITERATIONS); i++) {
     signal?.throwIfAborted();
     await scope?.checkActive?.();
+    // The conversation lease is short on purpose, so a crashed process frees
+    // its conversation by expiry. A turn that is still alive says so here.
+    await scope?.renewTurn?.();
     const params = {
       model: modelId,
       max_tokens: 16000,
@@ -608,7 +866,16 @@ export async function runAgentTurn({ cfg, sn, user, messages, userText, emit, au
       system: [isAnthropic
         ? { type: 'text', text: systemFull, cache_control: { type: 'ephemeral' } }
         : { type: 'text', text: systemFull }],
-      tools: toolDefinitions(scope?.actionsTiers).filter(t => !scope?.readOnly || !t.name.startsWith('sn_propose_')),
+      // Two independent gates, because they are two different permissions:
+      // a read-only stage loses the instance proposals, and a turn without
+      // the workspace capability loses the file tools. A stage can lose one
+      // and keep the other — an investigation writes up what it found
+      // without gaining authority to change anything on the instance.
+      tools: toolDefinitions(scope?.actionsTiers).filter((t) => {
+        if (scope?.readOnly && t.name.startsWith('sn_propose_')) return false;
+        if (!scope?.outputs && t.name.startsWith('workspace_')) return false;
+        return true;
+      }),
       messages,
     };
     // Effort is the main quality/cost dial — but it errors on models that
@@ -663,7 +930,7 @@ export async function runAgentTurn({ cfg, sn, user, messages, userText, emit, au
       let summary;
       let preview;
       try {
-        const result = await executeTool(sn, tu.name, tu.input, emit, { cfg, user, conversationId, scope });
+        const result = await executeTool(sn, tu.name, tu.input, emit, { cfg, user, conversationId, scope, toolUseId: tu.id });
         summary = summarize(tu.name, result);
         preview = previewOf(result);
         content = JSON.stringify(result);
@@ -677,7 +944,7 @@ export async function runAgentTurn({ cfg, sn, user, messages, userText, emit, au
       }
       const ms = Date.now() - started;
       emit('tool_end', { id: tu.id, name: tu.name, ms, summary, preview, error: isError ? content : undefined });
-      audit?.({ tool: tu.name, input: tu.input, ms, summary, error: isError || undefined });
+      audit?.({ tool: tu.name, input: redactToolInput(tu.name, tu.input), ms, summary, error: isError || undefined });
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content, is_error: isError || undefined });
     }
     } finally {

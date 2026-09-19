@@ -37,7 +37,12 @@ function frontend(response = { ok: true, record: { sys_id: 'a'.repeat(32), name:
       return { ok: true, json: async () => response };
     },
   });
-  vm.runInContext(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), context);
+  // The page loads four scripts into one scope; loading app.js alone would
+  // pass a test the browser would fail on (app.js registers its record and
+  // profile resources with WorkResources at load).
+  for (const file of ['work-pane.js', 'output-viewers.js', 'outputs.js', 'app.js']) {
+    vm.runInContext(fs.readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8'), context);
+  }
   return { context, requests };
 }
 

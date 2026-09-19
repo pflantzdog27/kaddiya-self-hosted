@@ -55,10 +55,17 @@ record the customer's own admin creates, and deactivating it ends all access imm
 | `mcp.js` | The read-only MCP server |
 | `runs.js` | Multi-stage work (spec → review → build → test → verify) |
 | `update-set-package.js` | An update set rendered as a loadable file plus a ledger |
+| `outputs.js` | The work pane's files: scope, quotas, immutable revisions, the turn lease |
 
 The dependency graph is acyclic and shallow. `actions.js` in particular is pure — it names
 endpoints and describes payloads, and imports nothing — so the catalog can be read, and
 tested, without starting a server or holding a session.
+
+In the browser, `app.js` is joined by three focused scripts, loaded in this order and sharing
+one scope: `work-pane.js` (the shell beside the conversation — tabs, sizing, focus, the
+narrow-screen mode), `output-viewers.js` (one viewer per format), and `outputs.js` (the API
+client, the Files list, the chat file card). There is no build step and no framework; the
+tests load the same four files, in the same order, into a `vm` context.
 
 ---
 
@@ -203,6 +210,35 @@ it, and a blob from one column will not open as another.
 ServiceNow tokens are deliberately *not* under the org key. They are sealed under the
 credential that fetched them — the browser's cookie, or the MCP bearer — so that the org key
 alone, or the database alone, opens nothing.
+
+### The work pane's files
+
+An **output** is something Kaddiya made that outlives the message it was made in: a document, a
+table, a script. It has a stable id and a series of immutable **revisions**, one per saved
+version, and it lives in this workspace's own database — never on a filesystem path, never
+behind a public URL.
+
+Three things distinguish it from a conversation row:
+
+**The parent key is composite.** `conversations` carries `UNIQUE (id, org_id)`, so `outputs`
+references the pair and `output_revisions` references `(output_id, org_id)` in turn. A row
+cannot be attached to another tenant's conversation even with a guessed id, because the pair
+has to match — tenancy is structural here, not only filtered.
+
+**The AAD names the revision.** The payload is sealed with
+`org_id:outputs.payload:<output_id>:<revision>`, so a ciphertext lifted from another output,
+another version or another org fails to open rather than decoding into someone else's document.
+Title and filename are inside that blob with the content, because "Payroll incident 4471" is
+itself instance data.
+
+**Revisions are append-only.** `UPDATE` and `DELETE` are revoked from the app role, as they are
+for `audit_events`. Deleting a conversation still cascades everything away, because referential
+actions run as the referencing table's owner, past both the grant and the policy.
+
+One more row earns its place: `conversation_turns`, a short lease taken for the duration of a
+turn. A process-local flag cannot arbitrate two app processes, and the lost update that follows
+is silent; the lease is rechecked inside the write transaction, so a turn whose lease expired
+under it cannot land a write behind the turn that took over.
 
 ---
 

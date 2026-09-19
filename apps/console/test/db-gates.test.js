@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { system, withOrg, APP_ROLE } from '../server/db.js';
 import * as store from '../server/store.js';
+import * as outputs from '../server/outputs.js';
 import * as notebook from '../server/notebook.js';
 import { audit, listAudit } from '../server/audit.js';
 import * as tenancy from '../server/tenancy.js';
@@ -47,7 +48,8 @@ test('(a) every table with an org_id column has RLS and a policy with USING and 
   }
 
   // Content tables are forced: the owner role cannot read across orgs either.
-  for (const table of ['conversations', 'notebook_entries', 'audit_events', 'usage_events', 'members']) {
+  for (const table of ['conversations', 'notebook_entries', 'audit_events', 'usage_events', 'members',
+    'outputs', 'output_revisions', 'conversation_turns']) {
     const { rows: [rel] } = await system((c) => c.query(`SELECT relforcerowsecurity FROM pg_class WHERE relname = $1`, [table]));
     assert.equal(rel.relforcerowsecurity, true, `${table}: FORCE ROW LEVEL SECURITY is off`);
   }
@@ -116,6 +118,26 @@ test('audit_events is append-only for the app role', async () => {
   await audit(a.scope, { user: 'x', action: 'write' });
   await assert.rejects(withOrg(a.org.id, (c) => c.query('UPDATE audit_events SET action = $1', ['tampered'])), /permission denied/);
   await assert.rejects(withOrg(a.org.id, (c) => c.query('DELETE FROM audit_events')), /permission denied/);
+});
+
+// The same append-only shape for saved versions: an output revision is what
+// a person downloaded and handed to someone. The application may add one and
+// may let a deleted conversation cascade it away; it may not rewrite one.
+test('output_revisions is append-only for the app role, and still cascades', async () => {
+  const a = await seedOrg('outputsappend');
+  const conv = await store.createConversation(a.scope);
+  const { reference } = await outputs.createOutput(a.scope, {
+    conversationId: conv.id, title: 'Held', filename: 'held', format: 'markdown',
+    content: 'kept', operationId: `${conv.id}:1`,
+  });
+  await assert.rejects(withOrg(a.org.id, (c) => c.query('UPDATE output_revisions SET byte_length = 0')), /permission denied/);
+  await assert.rejects(withOrg(a.org.id, (c) => c.query('DELETE FROM output_revisions')), /permission denied/);
+  assert.equal((await outputs.readOutput(a.scope, reference.output_id)).content, 'kept');
+  // Deleting the parent is allowed, and takes the revision with it: the
+  // referential action runs as the table's owner, past both the grant and
+  // the policy, which is what makes a revoked DELETE safe here.
+  await store.deleteConversation(a.scope, conv.id);
+  assert.equal(await outputs.readOutput(a.scope, reference.output_id), null);
 });
 
 test('(e) the directory role appears only in the modules allowed to use it', () => {
