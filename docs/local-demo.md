@@ -53,8 +53,9 @@ For screenshots, a walkthrough of the screens, or a capabilities PDF, the consol
 against a **seeded throwaway workspace**. Every screen except one reads the workspace database
 rather than ServiceNow, so a seeded session renders the product as it looks in use — with an
 organization, members at every status, several model connections, conversations that replay,
-notebook entries, MCP tokens and audit history. What it cannot do is run a turn: streaming a
-reply needs a real model and a real instance.
+notebook entries, MCP tokens and audit history, and the work pane's saved files with their
+versions and downloads. What it cannot do is run a turn: streaming a reply needs a real model
+and a real instance.
 
 ```bash
 node scripts/seed-demo.mjs --dir /tmp/kaddiya-demo --fresh
@@ -95,7 +96,14 @@ instance host does not exist.
 ## Showing the work pane
 
 The pane beside the conversation holds whatever is being made or examined — a document, a
-table, a script, a record. Six steps, about four minutes, entirely on synthetic data:
+table, a script, a record. Six steps, about four minutes, entirely on synthetic data.
+
+Steps 1 and 2 stream a reply, so they need a real model and instance. **Everything from step 3
+on works on the seeded workspace above**, with no model key and no instance: `seed-demo.mjs`
+writes its outputs through the real service and stores the tool results the turn returned, so
+the file cards, the Files list, the version selector and both downloads are the product's own,
+not a mock-up. On a seeded workspace, start at step 3 and open the pinned conversation
+**"Document the incident escalation process"**.
 
 1. **Ask for a deliverable.** "Document our incident escalation process, with roles, a decision
    table and after-hours handling." Kaddiya writes the file, the pane opens on it, and a card
