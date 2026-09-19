@@ -243,3 +243,108 @@ test('the transcript never reprints a saved document (spec §6: no duplicate bod
   // is exactly what this console exists to show.
   assert.equal(machineLine('sn_query', { table: 'incident', query: 'active=true^priority=1' }), 'active=true^priority=1');
 });
+
+// The splitter's sizing rules (spec §3), and one bug they had.
+//
+// `layout()` used to measure the rail it was deciding whether to collapse.
+// Collapsing sets its width to zero, which failed the "is there a rail?"
+// test, which un-collapsed it — so the result depended on which pass ran
+// last. In a real browser at 900px that produced a visible 220px rail beside
+// a 180px chat column, with the pane sized as though the rail were gone.
+// The fix remembers the rail's natural width; the test that matters is that
+// laying out twice says the same thing.
+test('the rail collapses before either pane is squeezed, and the decision is stable', () => {
+  const pane = layoutHarness();
+
+  const at = (viewport) => {
+    pane.setViewport(viewport);
+    pane.layout();
+    const first = pane.read();
+    pane.layout();                 // a second pass must not change its mind
+    const second = pane.read();
+    assert.deepEqual(second, first, `layout at ${viewport}px oscillates: ${JSON.stringify(first)} then ${JSON.stringify(second)}`);
+    return first;
+  };
+
+  // Roomy: the rail stays, and the pane takes its share.
+  const wide = at(1440);
+  assert.equal(wide.railCollapsed, false);
+  assert.equal(wide.narrow, false);
+  assert.ok(wide.paneWidth >= 420, `pane ${wide.paneWidth}`);
+  assert.ok(1440 - wide.railWidth - wide.paneWidth >= 340, 'the chat keeps its minimum');
+
+  // The spec's tightest two-pane case: both minimums are met with the rail up.
+  const tight = at(1024);
+  assert.equal(tight.railCollapsed, false, 'at 1024 the rail still fits');
+  assert.ok(tight.paneWidth >= 420 && 1024 - tight.railWidth - tight.paneWidth >= 340);
+
+  // Below that, the rail goes before either main pane is squeezed. This is
+  // the width that used to land the rail visible beside a 180px chat column.
+  const squeezed = at(900);
+  assert.equal(squeezed.railCollapsed, true, 'the rail collapses rather than squeezing the chat');
+  assert.equal(squeezed.narrow, false, 'and two panes still fit once it is gone');
+  assert.ok(squeezed.paneWidth >= 420, `pane ${squeezed.paneWidth}`);
+  assert.ok(900 - squeezed.paneWidth >= 340, `chat ${900 - squeezed.paneWidth} below its minimum`);
+
+  // Narrower than two minimums plus the rail: one work area at a time.
+  const narrow = at(700);
+  assert.equal(narrow.narrow, true, 'a single work area, with Back to chat');
+  assert.equal(narrow.paneVarSet, false, 'the pane is not given a split width in that mode');
+
+  // And back up again, in the other direction, with the same answers.
+  assert.deepEqual(at(900), squeezed, 'widening and narrowing agree');
+  assert.deepEqual(at(1440), wide);
+});
+
+/**
+ * A stand-in for the parts of the page `layout()` touches. The rail reports
+ * zero width while collapsed, exactly as `display: none` does in the browser
+ * — which is the feedback loop the bug above lived in.
+ */
+function layoutHarness() {
+  const { WorkPane } = app;
+  const state = WorkPane._state;
+  const el = { };
+  let viewport = 1280;
+  const workspace = new FakeNode('div');
+  const rail = new FakeNode('nav');
+  // The browser's two facts about the rail: it has no box while collapsed,
+  // but its computed width still reports its media-query bracket.
+  const naturalWidth = () => (viewport <= 980 ? 220 : 250);
+  rail.offsetWidth = () => (workspace.classList.has('rail-collapsed') ? 0 : naturalWidth());
+  app.getComputedStyle = (node) => ({ width: node === rail ? `${naturalWidth()}px` : '0px' });
+
+  const vars = new Map();
+  app.document.documentElement.style = {
+    setProperty: (k, v) => vars.set(k, v),
+    removeProperty: (k) => vars.delete(k),
+  };
+  Object.defineProperty(app.document.documentElement, 'clientWidth', { get: () => viewport, configurable: true });
+
+  // Point the controller's cached element map at this harness.
+  state.tabs = [{ key: 'x', kind: 'output', el: new FakeNode('div'), panel: new FakeNode('section'), labelEl: new FakeNode('button'), markEl: new FakeNode('span') }];
+  state.expanded = false;
+  state.ratio = 0.55;
+  state.railWidth = 0;
+  el.workspace = workspace;
+  el.rail = rail;
+  el.pane = new FakeNode('aside');
+  el.resize = new FakeNode('div');
+  el.back = new FakeNode('button');
+  el.tabs = new FakeNode('div');
+  el.overflow = new FakeNode('button');
+  el.overflowList = new FakeNode('div');
+  WorkPane._useElements(el);
+
+  return {
+    setViewport: (w) => { viewport = w; },
+    layout: () => WorkPane.layout(),
+    read: () => ({
+      railCollapsed: workspace.classList.has('rail-collapsed'),
+      narrow: workspace.classList.has('work-narrow'),
+      railWidth: workspace.classList.has('rail-collapsed') ? 0 : naturalWidth(),
+      paneVarSet: vars.has('--work-pane-width'),
+      paneWidth: Number(String(vars.get('--work-pane-width') || '0').replace('px', '')),
+    }),
+  };
+}

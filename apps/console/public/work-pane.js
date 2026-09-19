@@ -40,6 +40,7 @@ const WorkPane = (() => {
     expanded: false,
     ratio: DEFAULT_SPLIT,
     narrow: false,
+    railWidth: 0,        // the rail's natural width, remembered across collapses
     suppressAuto: false, // set when a person closes the pane; cleared next turn
     prefsKey: 'kd.pane',
   };
@@ -90,6 +91,29 @@ const WorkPane = (() => {
   // rail collapses before either main pane is squeezed, and when even that is
   // not enough the pane becomes a single work area with "Back to chat".
 
+  /**
+   * How wide the rail wants to be — never how wide it is right now.
+   *
+   * Measuring `offsetWidth` makes the collapse decision depend on its own
+   * outcome: collapsing sets it to zero, which reads as "there is no rail",
+   * which un-collapses it, and the layout lands wherever the oscillation
+   * stopped. At 900px that showed as a 220px rail beside a 180px chat column,
+   * with the pane sized as though the rail were gone.
+   *
+   * Computed style has no such feedback: a collapsed rail has no layout box,
+   * but its computed width is still whatever its media-query bracket says.
+   * The measured width is kept only as a fallback for anything that cannot
+   * resolve styles.
+   */
+  function railNaturalWidth() {
+    if (!el.rail) return 0;
+    const computed = parseFloat(window.getComputedStyle?.(el.rail)?.width ?? '');
+    if (Number.isFinite(computed) && computed > 0) return computed;
+    const measured = el.rail.offsetWidth || 0;
+    if (measured > 0) state.railWidth = measured;
+    return state.railWidth;
+  }
+
   function layout() {
     if (!el.pane) return;
     const open = state.tabs.length > 0;
@@ -105,7 +129,8 @@ const WorkPane = (() => {
     }
 
     const viewport = document.documentElement.clientWidth || window.innerWidth || 1280;
-    const railWidth = el.rail?.offsetWidth || 0;
+
+    const railWidth = railNaturalWidth();
     let available = viewport - railWidth;
 
     // Collapse the rail before squeezing either main pane.
@@ -473,6 +498,10 @@ const WorkPane = (() => {
 
   return {
     start, identify, open, close, closeAll, activate, reset, newTurn, mark, setLabel, layout,
+    // A seam for the layout tests: point the controller at stand-in elements
+    // so the sizing rules can be exercised without a browser. Nothing in the
+    // page calls this; `start()` does the real caching.
+    _useElements: (elements) => { started = true; Object.assign(el, elements); },
     isOpen: () => state.tabs.length > 0,
     activeKey: () => state.activeKey,
     activeResource: () => state.tabs.find((t) => t.key === state.activeKey)?.resource || null,

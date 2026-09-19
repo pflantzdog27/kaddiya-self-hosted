@@ -4,21 +4,38 @@
 // one renderer whose whole job is escaping. The real browser check runs
 // separately, under the real CSP.
 
+/** A Set that also answers the DOMTokenList methods layout code calls. */
+function tokenList(initial = []) {
+  const set = new Set(initial);
+  set.contains = (c) => set.has(c);
+  set.remove = (...cs) => cs.forEach((c) => set.delete(c));
+  set.toggle = (c, force) => {
+    const on = force === undefined ? !set.has(c) : !!force;
+    if (on) set.add(c); else set.delete(c);
+    return on;
+  };
+  return set;
+}
+
 class FakeNode {
   constructor(tag = 'div') {
     this.tagName = String(tag).toUpperCase();
     this.children = [];
     this.parentNode = null;
     this.attributes = {};
-    this.classList = new Set();
+    this.classList = tokenList();
     this._text = '';
     this._html = null;
     this.style = { setProperty() {}, removeProperty() {} };
     this.dataset = {};
     this.hidden = false;
+    this._width = 0;
   }
+  // Layout code asks elements how wide they are; a test can answer.
+  get offsetWidth() { return typeof this._width === 'function' ? this._width() : this._width; }
+  set offsetWidth(v) { this._width = v; }
   get className() { return [...this.classList].join(' '); }
-  set className(v) { this.classList = new Set(String(v).split(/\s+/).filter(Boolean)); }
+  set className(v) { this.classList = tokenList(String(v).split(/\s+/).filter(Boolean)); }
   set textContent(v) { this._text = String(v); this.children = []; }
   get textContent() {
     if (this._text) return this._text;
